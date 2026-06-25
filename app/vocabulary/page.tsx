@@ -131,6 +131,11 @@ export default function VocabularyPage() {
       )}
 
       {mode === "grid" && (
+        <>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4 text-sm" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "#fcd34d" }}>
+          <span>👆</span>
+          <span>Click any card to reveal the Bangla meaning, definition & examples</span>
+        </div>
         <div className="grid grid-cols-1 gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
           {filtered.map((word) => (
             <div
@@ -185,6 +190,7 @@ export default function VocabularyPage() {
             </div>
           ))}
         </div>
+        </>
       )}
 
       {filtered.length === 0 && (
