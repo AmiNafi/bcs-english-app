@@ -60,7 +60,7 @@ export default function HomePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-10">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-10">
         {[
           { label: "Total Words", value: vocabulary.length, color: "#6366f1" },
           { label: "Easy", value: easy, color: "#10b981" },
@@ -78,7 +78,7 @@ export default function HomePage() {
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-5 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-10">
         {modules.map((m) => (
           <Link
             key={m.href}

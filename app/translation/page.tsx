@@ -107,7 +107,7 @@ export default function TranslationPage() {
         <p style={{ color: "var(--muted)" }}>Words, phrases, idioms, sentences & AI-evaluated passage translation</p>
       </div>
 
-      <div className="flex gap-2 mb-6 border-b flex-wrap" style={{ borderColor: "var(--border)" }}>
+      <div className="tab-bar flex gap-2 mb-6 border-b" style={{ borderColor: "var(--border)" }}>
         {tabs.map((t) => (
           <button key={t.id} className="btn" onClick={() => { setTab(t.id); setFilter(""); }}
             style={{ borderRadius: "8px 8px 0 0", background: tab === t.id ? "var(--surface)" : "transparent", color: tab === t.id ? "white" : "var(--muted)", borderBottom: tab === t.id ? "2px solid #6366f1" : "2px solid transparent" }}>
@@ -139,7 +139,7 @@ export default function TranslationPage() {
           )}
           <div className="card">
             <h3 className="font-semibold text-white mb-3">Quick Reference — Common BCS Words</h3>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {vocabulary.slice(0, 12).map((w) => (
                 <div key={w.id} className="flex justify-between items-center p-2 rounded-lg cursor-pointer" style={{ background: "var(--surface2)" }}
                   onClick={() => { setQuery(w.word); setResult({ word: w.word, bangla: w.bangla, note: w.definition }); setNotFound(false); }}>
@@ -219,7 +219,7 @@ export default function TranslationPage() {
         <div>
           {/* Filters */}
           <div className="card mb-5">
-            <div className="grid grid-cols-2 gap-3 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--muted)" }}>Direction</label>
                 <div className="flex gap-2">

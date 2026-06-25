@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full flex">
         <Navigation />
-        <main className="flex-1 ml-64 p-8 min-h-screen">{children}</main>
+        <main className="flex-1 md:ml-64 pt-16 md:pt-0 p-4 md:p-8 min-h-screen">{children}</main>
       </body>
     </html>
   );

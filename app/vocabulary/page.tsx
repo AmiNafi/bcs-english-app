@@ -157,7 +157,7 @@ export default function VocabularyPage() {
               {selected?.id === word.id && (
                 <div className="mt-4 pt-4 fade-in" style={{ borderTop: "1px solid var(--border)" }}>
                   <p className="text-sm mb-3" style={{ color: "var(--muted)" }}>{word.definition}</p>
-                  <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <div>
                       <div className="text-xs font-semibold text-green-400 mb-1">SYNONYMS</div>
                       <div className="flex flex-wrap gap-1">

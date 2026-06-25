@@ -82,3 +82,12 @@ input:focus, select:focus, textarea:focus {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .card { padding: 1rem; }
+  .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap !important; padding-bottom: 2px; }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  h1 { font-size: 1.5rem !important; }
+  h2 { font-size: 1.25rem !important; }
+}

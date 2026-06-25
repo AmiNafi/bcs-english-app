@@ -71,7 +71,7 @@ export default function QuizPage() {
 
         <div className="card mb-5">
           <h2 className="font-semibold text-white mb-4">Configure Your Test</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm mb-1" style={{ color: "var(--muted)" }}>Question Type</label>
               <select value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}>
@@ -107,7 +107,7 @@ export default function QuizPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           {[
             { label: "Total Questions", value: "30", color: "#6366f1" },
             { label: "Per Session", value: "15", color: "#8b5cf6" },
