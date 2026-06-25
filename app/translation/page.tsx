@@ -65,12 +65,15 @@ function EntryCard({ entry }: { entry: TranslationEntry }) {
             <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: dc.bg, color: dc.text }}>{entry.difficulty}</span>
             <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--surface2)", color: "var(--muted)" }}>{entry.category}</span>
           </div>
-          <div className="bangla text-base font-semibold" style={{ color: "#a5b4fc" }}>{entry.bangla}</div>
+          {!open && (
+            <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>tap to reveal meaning →</div>
+          )}
         </div>
         <span className="text-lg flex-shrink-0 mt-1" style={{ color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
       </div>
       {open && (
         <div className="mt-3 pt-3 space-y-2 fade-in" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="bangla text-base font-semibold mb-2" style={{ color: "#a5b4fc" }}>{entry.bangla}</div>
           <div className="flex items-start gap-2 text-sm p-2 rounded-lg" style={{ background: "var(--surface2)" }}>
             <span style={{ color: "#6366f1", flexShrink: 0 }}>📌</span>
             <span style={{ color: "var(--muted)" }}>{entry.grammaticalNote}</span>
@@ -85,8 +88,30 @@ function EntryCard({ entry }: { entry: TranslationEntry }) {
   );
 }
 
+function SentenceCard({ s }: { s: { english: string; bangla: string; note?: string; category: string } }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="card" style={{ cursor: "pointer" }} onClick={() => setOpen((o) => !o)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>{s.category}</div>
+          <p className="text-white font-medium">{s.english}</p>
+          {!open && <div className="text-xs mt-2" style={{ color: "var(--muted)" }}>tap to reveal Bangla →</div>}
+        </div>
+        <span className="text-lg flex-shrink-0 mt-1" style={{ color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && (
+        <div className="mt-3 pt-3 fade-in" style={{ borderTop: "1px solid var(--border)" }}>
+          <p className="bangla text-base" style={{ color: "#a5b4fc" }}>{s.bangla}</p>
+          {s.note && <div className="mt-2 text-xs p-2 rounded" style={{ background: "rgba(99,102,241,0.1)", color: "#a5b4fc" }}>💡 {s.note}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TranslationPage() {
-  const [tab, setTab] = useState<Tab>("phrasal");
+  const [tab, setTab] = useState<Tab>("passages");
   const [filter, setFilter] = useState("");
   const [weakItems, setWeakItems] = useState<WeakItem[]>([]);
 
@@ -173,11 +198,11 @@ export default function TranslationPage() {
   const scoreColor = (s: number) => s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : s >= 40 ? "#f97316" : "#ef4444";
 
   const tabs: { id: Tab; label: string; icon: string; count?: number; badge?: boolean }[] = [
+    { id: "passages",  label: "Passages",          icon: "📖", count: passages.length },
     { id: "phrasal",   label: "Phrasal Verbs",    icon: "🔗", count: phrasalVerbs.length },
     { id: "idioms",    label: "Idioms & Phrases", icon: "💬", count: idiomsAndPhrases.length },
     { id: "linking",   label: "Links & Connectors", icon: "🔤", count: linkingVerbs.length },
     { id: "sentences", label: "Sentences",         icon: "📄", count: sampleSentences.length },
-    { id: "passages",  label: "Passages",          icon: "📖", count: passages.length },
     { id: "weak",      label: "Weak Areas",        icon: "⚠️", count: weakItems.length, badge: weakItems.length > 0 },
   ];
 
@@ -254,14 +279,7 @@ export default function TranslationPage() {
       {/* ── Sentences ── */}
       {tab === "sentences" && (
         <div className="space-y-3">
-          {sampleSentences.map((s, i) => (
-            <div key={i} className="card">
-              <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--muted)" }}>{s.category}</div>
-              <p className="text-white font-medium mb-2">{s.english}</p>
-              <p className="bangla text-base" style={{ color: "#a5b4fc" }}>{s.bangla}</p>
-              {s.note && <div className="mt-2 text-xs p-2 rounded" style={{ background: "rgba(99,102,241,0.1)", color: "#a5b4fc" }}>💡 {s.note}</div>}
-            </div>
-          ))}
+          {sampleSentences.map((s, i) => <SentenceCard key={i} s={s} />)}
         </div>
       )}
 
