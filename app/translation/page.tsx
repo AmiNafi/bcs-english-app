@@ -26,13 +26,31 @@ export type WeakItem = {
   relatedEntries: TranslationEntry[];
 };
 
+type AttemptRecord = {
+  score: number;
+  grade: string;
+  accuracy: string;
+  corrections: number;
+  attemptedAt: number;
+  userTranslation: string;
+};
+
 const WEAK_KEY = "bcs_weak_areas";
+const ATTEMPTS_KEY = "bcs_passage_attempts";
 
 function loadWeak(): WeakItem[] {
   try { return JSON.parse(localStorage.getItem(WEAK_KEY) ?? "[]"); } catch { return []; }
 }
 function saveWeak(items: WeakItem[]) {
   localStorage.setItem(WEAK_KEY, JSON.stringify(items));
+}
+function loadAttempts(): Record<string, AttemptRecord> {
+  try { return JSON.parse(localStorage.getItem(ATTEMPTS_KEY) ?? "{}"); } catch { return {}; }
+}
+function saveAttempt(passageId: string, record: AttemptRecord) {
+  const all = loadAttempts();
+  all[passageId] = record;
+  localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(all));
 }
 
 const allEntries = [...phrasalVerbs, ...idiomsAndPhrases, ...linkingVerbs];
@@ -53,6 +71,28 @@ const diffColor = (d: string) =>
   d === "medium" ? { bg: "rgba(245,158,11,0.15)", text: "#f59e0b" } :
   { bg: "rgba(239,68,68,0.15)", text: "#ef4444" };
 
+const scoreColor = (s: number) => s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : s >= 40 ? "#f97316" : "#ef4444";
+const gradeColor = (g: string) => g === "A+" || g === "A" ? "#10b981" : g === "B" ? "#f59e0b" : g === "C" ? "#f97316" : "#ef4444";
+
+function ScoreBadge({ attempt }: { attempt: AttemptRecord }) {
+  const color = scoreColor(attempt.score);
+  const date = new Date(attempt.attemptedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return (
+    <div className="flex items-center gap-1.5 flex-shrink-0">
+      <div className="flex flex-col items-end">
+        <div className="flex items-center gap-1">
+          <span className="text-base font-bold leading-none" style={{ color }}>{attempt.score}</span>
+          <span className="text-xs font-semibold" style={{ color: "var(--muted)" }}>/100</span>
+        </div>
+        <div className="flex items-center gap-1 mt-0.5">
+          <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: `${color}22`, color }}>{attempt.grade}</span>
+          <span className="text-xs" style={{ color: "var(--muted)" }}>{date}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EntryCard({ entry }: { entry: TranslationEntry }) {
   const [open, setOpen] = useState(false);
   const dc = diffColor(entry.difficulty);
@@ -65,9 +105,7 @@ function EntryCard({ entry }: { entry: TranslationEntry }) {
             <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: dc.bg, color: dc.text }}>{entry.difficulty}</span>
             <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--surface2)", color: "var(--muted)" }}>{entry.category}</span>
           </div>
-          {!open && (
-            <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>tap to reveal meaning →</div>
-          )}
+          {!open && <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>tap to reveal meaning →</div>}
         </div>
         <span className="text-lg flex-shrink-0 mt-1" style={{ color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
       </div>
@@ -114,8 +152,12 @@ export default function TranslationPage() {
   const [tab, setTab] = useState<Tab>("passages");
   const [filter, setFilter] = useState("");
   const [weakItems, setWeakItems] = useState<WeakItem[]>([]);
+  const [attempts, setAttempts] = useState<Record<string, AttemptRecord>>({});
 
-  useEffect(() => { setWeakItems(loadWeak()); }, []);
+  useEffect(() => {
+    setWeakItems(loadWeak());
+    setAttempts(loadAttempts());
+  }, []);
 
   const [pDirection, setPDirection] = useState<"all" | "E2B" | "B2E">("all");
   const [pCategory, setPCategory] = useState("all");
@@ -145,6 +187,11 @@ export default function TranslationPage() {
     return true;
   }), [pDirection, pCategory, pDifficulty, pSearch]);
 
+  const attemptedCount = Object.keys(attempts).length;
+  const avgScore = attemptedCount > 0
+    ? Math.round(Object.values(attempts).reduce((s, a) => s + a.score, 0) / attemptedCount)
+    : 0;
+
   async function submitEvaluation() {
     if (!selectedPassage || !userTranslation.trim()) return;
     setEvaluating(true); setEvalResult(null); setEvalError("");
@@ -159,6 +206,19 @@ export default function TranslationPage() {
         setEvalError(data.error);
       } else {
         setEvalResult(data);
+
+        // Save attempt to localStorage
+        const record: AttemptRecord = {
+          score: data.score,
+          grade: data.grade,
+          accuracy: data.accuracy,
+          corrections: data.corrections?.length ?? 0,
+          attemptedAt: Date.now(),
+          userTranslation: userTranslation.trim(),
+        };
+        saveAttempt(selectedPassage.id, record);
+        setAttempts((prev) => ({ ...prev, [selectedPassage.id]: record }));
+
         // Save mistakes to weak areas
         if (data.corrections?.length > 0) {
           const existing = loadWeak();
@@ -181,7 +241,12 @@ export default function TranslationPage() {
     finally { setEvaluating(false); }
   }
 
-  function openPassage(p: Passage) { setSelectedPassage(p); setUserTranslation(""); setEvalResult(null); setEvalError(""); }
+  function openPassage(p: Passage) {
+    setSelectedPassage(p);
+    setUserTranslation("");
+    setEvalResult(null);
+    setEvalError("");
+  }
 
   function removeWeak(id: string) {
     const updated = weakItems.filter((w) => w.id !== id);
@@ -194,16 +259,13 @@ export default function TranslationPage() {
     setWeakItems([]);
   }
 
-  const gradeColor = (g: string) => g === "A+" || g === "A" ? "#10b981" : g === "B" ? "#f59e0b" : g === "C" ? "#f97316" : "#ef4444";
-  const scoreColor = (s: number) => s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : s >= 40 ? "#f97316" : "#ef4444";
-
   const tabs: { id: Tab; label: string; icon: string; count?: number; badge?: boolean }[] = [
-    { id: "passages",  label: "Passages",          icon: "📖", count: passages.length },
-    { id: "phrasal",   label: "Phrasal Verbs",    icon: "🔗", count: phrasalVerbs.length },
-    { id: "idioms",    label: "Idioms & Phrases", icon: "💬", count: idiomsAndPhrases.length },
+    { id: "passages",  label: "Passages",           icon: "📖", count: passages.length },
+    { id: "phrasal",   label: "Phrasal Verbs",      icon: "🔗", count: phrasalVerbs.length },
+    { id: "idioms",    label: "Idioms & Phrases",   icon: "💬", count: idiomsAndPhrases.length },
     { id: "linking",   label: "Links & Connectors", icon: "🔤", count: linkingVerbs.length },
-    { id: "sentences", label: "Sentences",         icon: "📄", count: sampleSentences.length },
-    { id: "weak",      label: "Weak Areas",        icon: "⚠️", count: weakItems.length, badge: weakItems.length > 0 },
+    { id: "sentences", label: "Sentences",          icon: "📄", count: sampleSentences.length },
+    { id: "weak",      label: "Weak Areas",         icon: "⚠️", count: weakItems.length, badge: weakItems.length > 0 },
   ];
 
   return (
@@ -212,6 +274,35 @@ export default function TranslationPage() {
         <h1 className="text-2xl font-bold text-white mb-1">🔄 English ↔ Bangla Translation</h1>
         <p className="text-sm" style={{ color: "var(--muted)" }}>Words, phrases, idioms, sentences & AI-evaluated passage translation</p>
       </div>
+
+      {/* ── Progress banner (passages tab only, when not in detail view) ── */}
+      {tab === "passages" && !selectedPassage && attemptedCount > 0 && (
+        <div className="mb-5 rounded-xl p-4 fade-in" style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.15) 100%)", border: "1px solid rgba(99,102,241,0.35)" }}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "#a5b4fc" }}>Your Progress</div>
+              <div className="flex items-center gap-4 flex-wrap">
+                <div>
+                  <span className="text-2xl font-bold text-white">{attemptedCount}</span>
+                  <span className="text-sm ml-1" style={{ color: "var(--muted)" }}>of {passages.length} attempted</span>
+                </div>
+                <div className="w-px h-8 hidden sm:block" style={{ background: "var(--border)" }} />
+                <div>
+                  <span className="text-2xl font-bold" style={{ color: scoreColor(avgScore) }}>{avgScore}</span>
+                  <span className="text-sm ml-1" style={{ color: "var(--muted)" }}>avg score</span>
+                </div>
+              </div>
+              {/* Mini progress bar */}
+              <div className="mt-3 w-48 h-1.5 rounded-full" style={{ background: "var(--surface2)" }}>
+                <div className="h-1.5 rounded-full transition-all" style={{ width: `${(attemptedCount / passages.length) * 100}%`, background: "linear-gradient(90deg, #6366f1, #8b5cf6)" }} />
+              </div>
+            </div>
+            <div className="text-3xl">
+              {avgScore >= 80 ? "🏆" : avgScore >= 60 ? "📈" : "💪"}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Card-based tab selector ── */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
@@ -308,11 +399,9 @@ export default function TranslationPage() {
                 </div>
                 <button className="btn btn-secondary text-xs" onClick={clearWeak}>Clear All</button>
               </div>
-
               <div className="space-y-4">
                 {weakItems.map((item) => (
                   <div key={item.id} className="card" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
-                    {/* Header */}
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(239,68,68,0.15)", color: "#fca5a5" }}>
@@ -322,8 +411,6 @@ export default function TranslationPage() {
                       </div>
                       <button onClick={() => removeWeak(item.id)} className="text-xs flex-shrink-0" style={{ color: "var(--muted)" }}>✕ dismiss</button>
                     </div>
-
-                    {/* Correction */}
                     <div className="p-3 rounded-lg mb-3" style={{ background: "var(--surface2)" }}>
                       <div className="flex flex-col gap-1 text-sm mb-2">
                         <div className="flex items-start gap-2">
@@ -339,13 +426,9 @@ export default function TranslationPage() {
                         💡 {item.reason}
                       </div>
                     </div>
-
-                    {/* Related phrases/verbs to study */}
                     {item.relatedEntries.length > 0 && (
                       <div>
-                        <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "#f59e0b" }}>
-                          📚 Related to study
-                        </div>
+                        <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "#f59e0b" }}>📚 Related to study</div>
                         <div className="space-y-2">
                           {item.relatedEntries.map((e, i) => <EntryCard key={i} entry={e} />)}
                         </div>
@@ -403,25 +486,46 @@ export default function TranslationPage() {
           <div className="text-xs mb-3" style={{ color: "var(--muted)" }}>{filteredPassages.length} passages found</div>
 
           <div className="space-y-2">
-            {filteredPassages.map((p) => (
-              <div key={p.id} className="card cursor-pointer" style={{ transition: "border-color 0.15s" }} onClick={() => openPassage(p)}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="font-semibold text-white text-sm">{p.title}</span>
-                      <span className="badge" style={{ background: p.direction === "E2B" ? "rgba(99,102,241,0.2)" : "rgba(16,185,129,0.2)", color: p.direction === "E2B" ? "#a5b4fc" : "#6ee7b7", fontSize: "0.65rem" }}>
-                        {p.direction === "E2B" ? "EN→BN" : "BN→EN"}
-                      </span>
-                      <span className={`badge badge-${p.difficulty}`}>{p.difficulty}</span>
+            {filteredPassages.map((p) => {
+              const attempt = attempts[p.id];
+              const color = attempt ? scoreColor(attempt.score) : undefined;
+              return (
+                <div
+                  key={p.id}
+                  className="card cursor-pointer"
+                  style={{
+                    transition: "border-color 0.15s, box-shadow 0.15s",
+                    borderColor: attempt ? `${color}55` : "var(--border)",
+                    background: attempt ? `${color}08` : "var(--surface)",
+                  }}
+                  onClick={() => openPassage(p)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-semibold text-white text-sm">{p.title}</span>
+                        <span className="badge" style={{ background: p.direction === "E2B" ? "rgba(99,102,241,0.2)" : "rgba(16,185,129,0.2)", color: p.direction === "E2B" ? "#a5b4fc" : "#6ee7b7", fontSize: "0.65rem" }}>
+                          {p.direction === "E2B" ? "EN→BN" : "BN→EN"}
+                        </span>
+                        <span className={`badge badge-${p.difficulty}`}>{p.difficulty}</span>
+                        {attempt && (
+                          <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ background: `${color}22`, color }}>
+                            ✓ attempted
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs truncate" style={{ color: "var(--muted)" }}>
+                        {p.original.slice(0, 100)}{p.original.length > 100 ? "…" : ""}
+                      </p>
                     </div>
-                    <p className="text-xs truncate" style={{ color: "var(--muted)" }}>
-                      {p.original.slice(0, 100)}{p.original.length > 100 ? "…" : ""}
-                    </p>
+                    {attempt
+                      ? <ScoreBadge attempt={attempt} />
+                      : <span className="text-sm flex-shrink-0" style={{ color: "var(--muted)" }}>→</span>
+                    }
                   </div>
-                  <span className="text-sm flex-shrink-0" style={{ color: "var(--muted)" }}>→</span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           {filteredPassages.length === 0 && (
             <div className="text-center py-16" style={{ color: "var(--muted)" }}>No passages match your filters.</div>
@@ -433,9 +537,40 @@ export default function TranslationPage() {
       {tab === "passages" && selectedPassage && (
         <div className="fade-in space-y-3 w-full">
 
-          {/* Back + meta */}
+          {/* Back */}
           <button className="btn btn-secondary" onClick={() => { setSelectedPassage(null); setEvalResult(null); }}>← Back</button>
 
+          {/* Previous attempt banner */}
+          {attempts[selectedPassage.id] && !evalResult && (() => {
+            const prev = attempts[selectedPassage.id];
+            const c = scoreColor(prev.score);
+            const date = new Date(prev.attemptedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+            return (
+              <div className="rounded-xl p-4 fade-in" style={{ background: `${c}12`, border: `1px solid ${c}44` }}>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: c }}>Previous Attempt · {date}</div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl font-bold" style={{ color: c }}>{prev.score}<span className="text-base font-normal" style={{ color: "var(--muted)" }}>/100</span></span>
+                      <div>
+                        <div className="text-sm font-bold" style={{ color: gradeColor(prev.grade) }}>Grade {prev.grade}</div>
+                        <div className="text-xs" style={{ color: "var(--muted)" }}>{prev.accuracy} · {prev.corrections} correction{prev.corrections !== 1 ? "s" : ""}</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-3xl">{prev.score >= 80 ? "🏆" : prev.score >= 60 ? "📈" : "💪"}</div>
+                </div>
+                <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${c}33` }}>
+                  <div className="text-xs font-semibold mb-1" style={{ color: "var(--muted)" }}>Your previous translation</div>
+                  <p className={`text-xs leading-relaxed ${selectedPassage.direction === "E2B" ? "bangla" : ""}`} style={{ color: "var(--muted)" }}>
+                    {prev.userTranslation.slice(0, 200)}{prev.userTranslation.length > 200 ? "…" : ""}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Passage text */}
           <div className="card w-full">
             <div className="flex flex-wrap gap-2 mb-3">
               <span className="badge" style={{ background: selectedPassage.direction === "E2B" ? "rgba(99,102,241,0.2)" : "rgba(16,185,129,0.2)", color: selectedPassage.direction === "E2B" ? "#a5b4fc" : "#6ee7b7" }}>
