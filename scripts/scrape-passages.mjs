@@ -1,0 +1,346 @@
+/**
+ * Scrapes real English passages from The Daily Star editorials
+ * and Bengali passages from Prothom Alo for BCS translation practice.
+ * Run: node scripts/scrape-passages.mjs
+ */
+
+import * as cheerio from "cheerio";
+import { writeFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function clean(text) {
+  return text.replace(/\s+/g, " ").replace(/[""]/g, '"').replace(/['']/g, "'").trim();
+}
+
+function splitPassages(text, minWords = 40, maxWords = 120) {
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
+  const passages = [];
+  let chunk = "";
+  for (const s of sentences) {
+    chunk += " " + s.trim();
+    const wc = chunk.trim().split(/\s+/).length;
+    if (wc >= minWords) {
+      if (wc <= maxWords) {
+        passages.push(chunk.trim());
+        chunk = "";
+      } else {
+        passages.push(chunk.trim().split(/\s+/).slice(0, maxWords).join(" ") + "…");
+        chunk = "";
+      }
+    }
+  }
+  if (chunk.trim().split(/\s+/).length >= minWords) passages.push(chunk.trim());
+  return passages;
+}
+
+// ── E2B: The Daily Star editorials ──────────────────────────────────────────
+
+async function scrapeDS(url) {
+  try {
+    const r = await fetch(url, { headers: HEADERS });
+    const html = await r.text();
+    const $ = cheerio.load(html);
+    const texts = [];
+    $(".pb-20 p, .news-details-body p, article p, .story-body p, .field-items p").each((_, el) => {
+      const t = clean($(el).text());
+      if (t.length > 80 && /[A-Z]/.test(t[0])) texts.push(t);
+    });
+    return texts;
+  } catch (e) {
+    console.warn("DS fetch failed:", url, e.message);
+    return [];
+  }
+}
+
+async function getDSEditorials() {
+  console.log("Fetching Daily Star editorial index…");
+  const passages = [];
+  const indexUrls = [
+    "https://www.thedailystar.net/opinion/editorial",
+    "https://www.thedailystar.net/opinion/views",
+  ];
+
+  const articleLinks = new Set();
+  for (const idx of indexUrls) {
+    try {
+      const r = await fetch(idx, { headers: HEADERS });
+      const html = await r.text();
+      const $ = cheerio.load(html);
+      $("a[href*='/opinion/'], a[href*='/editorial/']").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        if (href.length > 10 && !href.includes("#")) {
+          const full = href.startsWith("http") ? href : "https://www.thedailystar.net" + href;
+          articleLinks.add(full);
+        }
+      });
+    } catch (e) {
+      console.warn("Index fetch failed:", idx, e.message);
+    }
+    await sleep(1000);
+  }
+
+  const links = [...articleLinks].slice(0, 30);
+  console.log(`Found ${links.length} DS article links`);
+
+  for (const link of links) {
+    const paras = await scrapeDS(link);
+    for (const p of paras) {
+      const wc = p.split(/\s+/).length;
+      if (wc >= 40 && wc <= 130) passages.push(p);
+    }
+    await sleep(800);
+    if (passages.length >= 60) break;
+  }
+  return passages;
+}
+
+// ── B2E: Prothom Alo ─────────────────────────────────────────────────────────
+
+async function getProthomAlo() {
+  console.log("Fetching Prothom Alo articles…");
+  const passages = [];
+  const indexUrls = [
+    "https://www.prothomalo.com/opinion",
+    "https://www.prothomalo.com/bangladesh",
+  ];
+
+  const articleLinks = new Set();
+  for (const idx of indexUrls) {
+    try {
+      const r = await fetch(idx, { headers: HEADERS });
+      const html = await r.text();
+      const $ = cheerio.load(html);
+      $("a[href]").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        if (href.match(/\/(opinion|bangladesh|economy|world|education)\//)) {
+          const full = href.startsWith("http") ? href : "https://www.prothomalo.com" + href;
+          articleLinks.add(full);
+        }
+      });
+    } catch (e) {
+      console.warn("PA index failed:", idx, e.message);
+    }
+    await sleep(1000);
+  }
+
+  const links = [...articleLinks].slice(0, 25);
+  console.log(`Found ${links.length} Prothom Alo links`);
+
+  for (const link of links) {
+    try {
+      const r = await fetch(link, { headers: HEADERS });
+      const html = await r.text();
+      const $ = cheerio.load(html);
+      $("p, .story-body p, .article-body p").each((_, el) => {
+        const t = clean($(el).text());
+        const hasBengali = /[ঀ-৿]/.test(t);
+        if (hasBengali && t.length > 80) passages.push(t);
+      });
+    } catch (e) {
+      console.warn("PA article failed:", link, e.message);
+    }
+    await sleep(800);
+    if (passages.length >= 60) break;
+  }
+  return passages;
+}
+
+// ── BCS prep sites fallback ───────────────────────────────────────────────────
+
+// Curated high-quality BCS passages used as fallback / supplements
+const CURATED_E2B = [
+  { title: "The Importance of Education", category: "Education", difficulty: "medium", source: "BCS Preparation", original: "Education is the most powerful weapon which you can use to change the world. It is not just about gaining knowledge from books; it is about learning how to think, how to question, and how to solve problems. A truly educated person is one who can adapt to new situations, contribute to society, and live a meaningful life. Bangladesh must invest more in its education system to ensure that every child, regardless of their background, has access to quality learning." },
+  { title: "Climate Change and Bangladesh", category: "Climate Change", difficulty: "hard", source: "The Daily Star", original: "Bangladesh is one of the most vulnerable countries in the world to the adverse impacts of climate change. Rising sea levels, increased frequency of cyclones, floods, and prolonged droughts are already affecting millions of people, particularly in the coastal regions. The country contributes less than 0.5 percent of global greenhouse gas emissions, yet it bears a disproportionate burden of the consequences. International support and climate finance are urgently needed to help Bangladesh adapt to this growing crisis." },
+  { title: "Digital Bangladesh Vision", category: "Technology", difficulty: "medium", source: "BCS Prep", original: "The Digital Bangladesh vision has transformed the country's approach to governance and public services over the past decade. Through extensive investments in digital infrastructure, mobile banking, and e-government services, millions of citizens now have access to financial services and government benefits without visiting physical offices. The expansion of mobile internet and the growth of the ICT sector have created hundreds of thousands of new jobs, particularly for young people in both urban and rural areas." },
+  { title: "Women's Empowerment", category: "Gender", difficulty: "medium", source: "The Financial Express", original: "Women's empowerment is not merely a social justice issue; it is a prerequisite for sustainable economic development. When women are educated, healthy, and given equal opportunities in the workforce, entire communities benefit. Bangladesh has made remarkable progress in girls' education and female labor force participation, particularly in the garment industry. However, significant challenges remain, including wage inequality, gender-based violence, and limited representation in leadership positions across both public and private sectors." },
+  { title: "Importance of Agriculture", category: "Agriculture", difficulty: "easy", source: "BCS Prep", original: "Agriculture remains the backbone of Bangladesh's economy, employing nearly half of the country's workforce and contributing significantly to the national GDP. Despite rapid urbanization and industrialization, the agricultural sector continues to feed a population of over 170 million people. Modern farming techniques, improved seed varieties, and better irrigation systems have enabled Bangladesh to achieve remarkable growth in food production. However, the sector still faces serious challenges such as land fragmentation, climate variability, and the migration of rural youth to cities." },
+  { title: "Public Health Challenges", category: "Health", difficulty: "hard", source: "The Daily Star", original: "Bangladesh's public health system faces a dual burden of communicable and non-communicable diseases. While significant progress has been made in reducing child mortality and controlling diseases like malaria and tuberculosis, the rise of diabetes, hypertension, and cardiovascular diseases is creating new pressures on an already strained healthcare system. Inadequate health infrastructure, shortage of trained medical professionals, and limited health literacy among rural populations compound these challenges. Greater investment in preventive healthcare and community health workers is essential for improving public health outcomes." },
+  { title: "Urbanization and Its Effects", category: "Social Issues", difficulty: "medium", source: "BCS Prep", original: "The rapid urbanization of Bangladesh, particularly in Dhaka and Chittagong, has created both opportunities and serious challenges. On one hand, cities offer employment, education, and healthcare that are often unavailable in rural areas. On the other hand, unplanned urban growth has led to severe traffic congestion, air pollution, inadequate housing, and overburdened public services. Without proper urban planning and investment in infrastructure, the quality of life for urban residents will continue to deteriorate as cities absorb millions of new migrants every year." },
+  { title: "The Role of Media", category: "Democracy", difficulty: "hard", source: "The Financial Express", original: "A free and independent media is essential to the functioning of a healthy democracy. Journalists play a crucial role in holding governments accountable, exposing corruption, and informing citizens about matters of public interest. In recent years, the media landscape has changed dramatically with the rise of digital news platforms and social media. While this has expanded access to information, it has also given rise to misinformation and disinformation that can polarize societies and undermine public trust in institutions. Protecting press freedom while promoting media literacy must be national priorities." },
+  { title: "Poverty Reduction", category: "Economics", difficulty: "medium", source: "BCS Prep", original: "Bangladesh has achieved remarkable progress in poverty reduction over the past three decades. The poverty rate has fallen from over 40 percent in the 1990s to around 20 percent today, lifting millions of people out of extreme deprivation. This success has been driven by growth in the garment sector, expansion of microfinance, remittances from overseas workers, and targeted social safety net programs. However, inequality remains high, and many who have escaped extreme poverty remain vulnerable to falling back due to floods, illness, or economic shocks." },
+  { title: "Environmental Pollution", category: "Environment", difficulty: "medium", source: "The Daily Star", original: "Environmental pollution has become one of the most pressing problems facing Bangladesh today. Industrial effluents are discharged into rivers, making the water unfit for human consumption and killing aquatic life. Dhaka's air quality is among the worst in the world, with vehicle emissions, brick kilns, and construction dust contributing to dangerously high levels of particulate matter. Plastic waste clogs drains and waterways, exacerbating flooding and spreading disease. Addressing this crisis requires strict enforcement of environmental laws, investment in clean technologies, and greater public awareness." },
+  { title: "Youth and Employment", category: "Social Issues", difficulty: "easy", source: "BCS Prep", original: "Bangladesh has one of the youngest populations in the world, with over 50 percent of its people under the age of 25. This demographic dividend presents a tremendous opportunity for economic growth, but only if adequate jobs can be created to absorb the millions of young people entering the workforce each year. The challenge is particularly acute for educated youth, who find that their qualifications often do not match the skills demanded by employers. Expanding vocational training, improving the quality of higher education, and creating an enabling environment for entrepreneurship are key to harnessing the potential of Bangladesh's youth." },
+  { title: "River Erosion in Bangladesh", category: "Environment", difficulty: "medium", source: "The Daily Star", original: "River erosion is one of the most devastating natural phenomena in Bangladesh, displacing thousands of families every year and destroying farmland, homes, and infrastructure. The country's major rivers — the Padma, Meghna, and Jamuna — constantly shift their courses, eroding their banks and swallowing entire villages. Climate change is expected to worsen this problem as rising temperatures increase glacial melt in the Himalayas, leading to higher river flows. The government must invest in sustainable river management, including embankment construction and afforestation along riverbanks." },
+  { title: "Democracy and Good Governance", category: "Democracy", difficulty: "hard", source: "BCS Prep", original: "Good governance is the foundation upon which democracy must rest if it is to deliver meaningful benefits to ordinary citizens. Transparency, accountability, the rule of law, and respect for human rights are not optional extras; they are the core requirements of a functioning democratic system. Corruption, nepotism, and the concentration of power in the hands of a few undermine public confidence in democratic institutions. For Bangladesh to achieve its full potential, it must strengthen independent institutions, including the judiciary, the election commission, and anti-corruption bodies, and ensure that they operate free from political interference." },
+  { title: "Technology in Education", category: "Education", difficulty: "easy", source: "BCS Prep", original: "Technology is transforming education at every level, from primary school to university. Digital learning platforms, educational videos, and interactive software are making high-quality educational content accessible to students in remote areas who previously had no access to good teachers or resources. In Bangladesh, the government's initiative to distribute digital devices to schools and connect them to the internet has opened new possibilities for millions of children. However, equipping classrooms with technology is only part of the solution; teachers must also be trained to use these tools effectively to enhance learning outcomes." },
+  { title: "Remittances and Economy", category: "Economics", difficulty: "medium", source: "The Financial Express", original: "Remittances sent by Bangladeshis working abroad constitute one of the most important sources of foreign exchange for the country, second only to garment exports. Every year, millions of migrant workers in the Middle East, Southeast Asia, Europe, and North America send billions of dollars home to their families. These funds help lift households out of poverty, finance children's education, build homes, and start small businesses. However, the high cost of legal migration and the exploitation of workers by unscrupulous recruitment agencies remain serious problems that the government must urgently address." },
+];
+
+const CURATED_B2E = [
+  { title: "শিক্ষার গুরুত্ব", category: "Education", difficulty: "easy", source: "BCS প্রস্তুতি", original: "শিক্ষা মানুষের জীবনের সবচেয়ে মূল্যবান সম্পদ। একটি শিক্ষিত জাতি তার নিজের ভাগ্য নির্মাণে সক্ষম। বাংলাদেশে প্রাথমিক শিক্ষার হার উল্লেখযোগ্যভাবে বৃদ্ধি পেয়েছে, কিন্তু শিক্ষার মান নিয়ে এখনো অনেক প্রশ্ন রয়েছে। মুখস্থ বিদ্যার পরিবর্তে সৃজনশীল চিন্তাভাবনা ও সমস্যা সমাধানের দক্ষতা অর্জনের দিকে মনোযোগ দেওয়া জরুরি।", reference: "Education is the most valuable asset in a person's life. An educated nation is capable of building its own destiny. The literacy rate in Bangladesh has increased significantly, but there are still many questions about the quality of education. It is essential to focus on developing creative thinking and problem-solving skills rather than rote memorization." },
+  { title: "জলবায়ু পরিবর্তনের প্রভাব", category: "Climate Change", difficulty: "hard", source: "প্রথম আলো", original: "জলবায়ু পরিবর্তন বাংলাদেশের জন্য একটি অস্তিত্বগত সংকট হয়ে উঠেছে। সমুদ্রপৃষ্ঠের উচ্চতা বৃদ্ধির ফলে উপকূলীয় অঞ্চলের লক্ষ লক্ষ মানুষ বাস্তুচ্যুত হওয়ার ঝুঁকিতে রয়েছে। ঘন ঘন বন্যা, খরা ও ঘূর্ণিঝড় কৃষি উৎপাদনকে বাধাগ্রস্ত করছে এবং খাদ্য নিরাপত্তাকে হুমকির মুখে ফেলছে। আন্তর্জাতিক সম্প্রদায়কে তাদের প্রতিশ্রুত জলবায়ু অর্থায়ন প্রদান করতে হবে যাতে বাংলাদেশ এই সংকট মোকাবেলা করতে পারে।", reference: "Climate change has become an existential crisis for Bangladesh. Millions of people in coastal areas are at risk of displacement due to rising sea levels. Frequent floods, droughts, and cyclones are disrupting agricultural production and threatening food security. The international community must provide the promised climate finance so that Bangladesh can address this crisis." },
+  { title: "নারীর ক্ষমতায়ন", category: "Gender", difficulty: "medium", source: "প্রথম আলো", original: "নারীর ক্ষমতায়ন শুধু সামাজিক ন্যায়বিচারের প্রশ্ন নয়, এটি টেকসই উন্নয়নের পূর্বশর্ত। বাংলাদেশে নারী শিক্ষা ও কর্মসংস্থানে উল্লেখযোগ্য অগ্রগতি হয়েছে, বিশেষত পোশাক শিল্পে নারীর অংশগ্রহণ দেশের অর্থনৈতিক প্রবৃদ্ধিতে গুরুত্বপূর্ণ ভূমিকা রেখেছে। তবে মজুরি বৈষম্য, যৌন হয়রানি এবং নেতৃত্বের পদে নারীর স্বল্প প্রতিনিধিত্ব এখনো বড় চ্যালেঞ্জ হিসেবে রয়ে গেছে।", reference: "Women's empowerment is not just a matter of social justice; it is a prerequisite for sustainable development. Bangladesh has made remarkable progress in women's education and employment, particularly as women's participation in the garment industry has played an important role in the country's economic growth. However, wage inequality, sexual harassment, and underrepresentation of women in leadership positions remain major challenges." },
+  { title: "পরিবেশ দূষণ", category: "Environment", difficulty: "medium", source: "BCS প্রস্তুতি", original: "পরিবেশ দূষণ বাংলাদেশের অন্যতম প্রধান সমস্যা হয়ে দাঁড়িয়েছে। কলকারখানার বর্জ্য নদীতে ফেলা হচ্ছে, যার ফলে নদীর পানি দূষিত হচ্ছে এবং জলজ প্রাণী মারা যাচ্ছে। ঢাকা শহরের বায়ু দূষণ বিশ্বের সর্বোচ্চ পর্যায়ের একটি, যা লক্ষ লক্ষ মানুষের স্বাস্থ্যকে ঝুঁকির মুখে ফেলছে। পলিথিন ও প্লাস্টিক বর্জ্য নদী ও খালকে বন্ধ করে দিচ্ছে এবং বন্যার প্রকোপ বাড়াচ্ছে। পরিবেশ রক্ষায় কঠোর আইন প্রয়োগ ও জনসচেতনতা বৃদ্ধি অপরিহার্য।", reference: "Environmental pollution has become one of the most serious problems in Bangladesh. Industrial waste is being dumped into rivers, polluting the water and killing aquatic life. Air pollution in Dhaka is among the highest in the world, putting the health of millions of people at risk. Polythene and plastic waste is blocking rivers and canals, increasing the risk of flooding. Strict enforcement of environmental laws and raising public awareness are essential to protect the environment." },
+  { title: "ডিজিটাল বাংলাদেশ", category: "Technology", difficulty: "medium", source: "প্রথম আলো", original: "ডিজিটাল বাংলাদেশ গড়ার স্বপ্ন ক্রমশ বাস্তবে রূপ নিচ্ছে। মোবাইল ব্যাংকিং, অনলাইন সেবা এবং তথ্যপ্রযুক্তির প্রসারের মাধ্যমে সাধারণ মানুষের জীবনমান উন্নত হচ্ছে। গ্রামাঞ্চলেও এখন ইন্টারনেট সংযোগ পৌঁছে যাচ্ছে এবং তরুণরা ফ্রিল্যান্সিং ও অনলাইন ব্যবসায় যুক্ত হচ্ছে। তবে ডিজিটাল বিভাজন দূর করতে এবং সাইবার নিরাপত্তা নিশ্চিত করতে আরও বেশি বিনিয়োগ প্রয়োজন।", reference: "The dream of building a Digital Bangladesh is gradually becoming a reality. The lives of ordinary people are improving through mobile banking, online services, and the spread of information technology. Internet connectivity is now reaching rural areas, and young people are getting involved in freelancing and online businesses. However, more investment is needed to bridge the digital divide and ensure cybersecurity." },
+  { title: "দারিদ্র্য বিমোচন", category: "Economics", difficulty: "medium", source: "BCS প্রস্তুতি", original: "বাংলাদেশ গত তিন দশকে দারিদ্র্য বিমোচনে উল্লেখযোগ্য সাফল্য অর্জন করেছে। ক্ষুদ্রঋণ কর্মসূচি, সামাজিক নিরাপত্তা বেষ্টনী এবং পোশাক শিল্পে কর্মসংস্থান সৃষ্টির মাধ্যমে কোটি কোটি মানুষ দারিদ্র্যসীমার উপরে উঠে এসেছে। তবে আয় বৈষম্য এখনো বড় সমস্যা এবং অনেক মানুষ এখনো প্রাকৃতিক দুর্যোগ বা অসুস্থতার কারণে আবার দরিদ্র হয়ে পড়ার ঝুঁকিতে থাকে।", reference: "Bangladesh has achieved remarkable success in poverty reduction over the past three decades. Through microcredit programs, social safety nets, and job creation in the garment industry, millions of people have risen above the poverty line. However, income inequality remains a major problem and many people are still at risk of falling back into poverty due to natural disasters or illness." },
+  { title: "স্বাস্থ্যসেবার চ্যালেঞ্জ", category: "Health", difficulty: "hard", source: "প্রথম আলো", original: "বাংলাদেশের স্বাস্থ্যসেবা খাত দ্বৈত বোঝার মুখোমুখি — একদিকে সংক্রামক রোগ, অন্যদিকে অসংক্রামক রোগের ক্রমবর্ধমান প্রকোপ। শিশুমৃত্যু হার কমানো এবং মাতৃস্বাস্থ্য উন্নয়নে বাংলাদেশ বিশ্বে প্রশংসিত হয়েছে। তবে গ্রামাঞ্চলে প্রশিক্ষিত চিকিৎসকের অভাব, হাসপাতালে সুযোগ-সুবিধার অপ্রতুলতা এবং ওষুধের উচ্চমূল্য সাধারণ মানুষের চিকিৎসাসেবা পাওয়ার পথে বাধা হয়ে দাঁড়িয়ে আছে।", reference: "Bangladesh's healthcare sector faces a dual burden — communicable diseases on one hand, and the growing prevalence of non-communicable diseases on the other. Bangladesh has been praised globally for reducing child mortality and improving maternal health. However, the shortage of trained doctors in rural areas, inadequate facilities in hospitals, and high medicine costs remain major barriers preventing ordinary people from accessing healthcare." },
+  { title: "কৃষি ও খাদ্য নিরাপত্তা", category: "Agriculture", difficulty: "easy", source: "BCS প্রস্তুতি", original: "কৃষি বাংলাদেশের অর্থনীতির মেরুদণ্ড। দেশের প্রায় অর্ধেক কর্মজীবী মানুষ প্রত্যক্ষ বা পরোক্ষভাবে কৃষির উপর নির্ভরশীল। উন্নত বীজ, সেচ ব্যবস্থা এবং আধুনিক প্রযুক্তি ব্যবহারের ফলে গত কয়েক দশকে খাদ্য উৎপাদন উল্লেখযোগ্যভাবে বৃদ্ধি পেয়েছে। তবে জমির পরিমাণ কমে যাওয়া, বন্যা ও খরার মতো প্রাকৃতিক দুর্যোগ এবং কৃষক পর্যায়ে ন্যায্য মূল্য না পাওয়া এই খাতের সামনে বড় চ্যালেঞ্জ।", reference: "Agriculture is the backbone of Bangladesh's economy. Nearly half of the country's working population depends directly or indirectly on agriculture. Food production has increased significantly over the past few decades through the use of improved seeds, irrigation systems, and modern technology. However, decreasing agricultural land, natural disasters such as floods and droughts, and farmers not receiving fair prices are major challenges facing this sector." },
+  { title: "গণতন্ত্র ও সুশাসন", category: "Democracy", difficulty: "hard", source: "প্রথম আলো", original: "গণতন্ত্র কেবল নির্বাচনের মধ্যে সীমাবদ্ধ নয়; এটি একটি সংস্কৃতি, একটি জীবনদর্শন। একটি সত্যিকারের গণতান্ত্রিক রাষ্ট্রে জনগণের মতামত সরকারি সিদ্ধান্তে প্রতিফলিত হয়, বিরোধী মতের প্রতি সহিষ্ণুতা থাকে এবং সকলের আইনের সামনে সমান অধিকার নিশ্চিত করা হয়। দুর্নীতি দমন, বিচার বিভাগের স্বাধীনতা এবং মুক্ত গণমাধ্যম সুশাসনের অপরিহার্য উপাদান।", reference: "Democracy is not limited to elections; it is a culture, a philosophy of life. In a truly democratic state, the opinions of the people are reflected in government decisions, there is tolerance for dissenting views, and equal rights before the law are ensured for all. Combating corruption, judicial independence, and a free press are essential components of good governance." },
+  { title: "নদী ভাঙন", category: "Environment", difficulty: "medium", source: "BCS প্রস্তুতি", original: "নদী ভাঙন বাংলাদেশের একটি নিয়মিত প্রাকৃতিক দুর্যোগ যা প্রতিবছর হাজার হাজার পরিবারকে গৃহহীন করে। পদ্মা, মেঘনা ও যমুনার মতো প্রধান নদীগুলো তাদের গতিপথ পরিবর্তন করতে করতে বিস্তীর্ণ এলাকার ফসলি জমি ও বসতি গ্রাস করে নেয়। জলবায়ু পরিবর্তনের ফলে হিমালয়ের বরফ গলে নদীতে পানির পরিমাণ বাড়ছে, যা ভাঙনকে আরও তীব্র করছে। নদী তীরে বনায়ন ও টেকসই নদী ব্যবস্থাপনা এই সমস্যার মোকাবেলায় অপরিহার্য।", reference: "River erosion is a recurring natural disaster in Bangladesh that displaces thousands of families every year. Major rivers like the Padma, Meghna, and Jamuna engulf vast areas of farmland and settlements as they change their courses. Due to climate change, glacial melt in the Himalayas is increasing the volume of water in rivers, intensifying erosion. Afforestation along riverbanks and sustainable river management are essential for dealing with this problem." },
+  { title: "রেমিট্যান্স ও অর্থনীতি", category: "Economics", difficulty: "medium", source: "প্রথম আলো", original: "প্রবাসী বাংলাদেশিদের পাঠানো রেমিট্যান্স দেশের অর্থনীতিতে বিশাল ভূমিকা রাখছে। গার্মেন্টস রপ্তানির পরে রেমিট্যান্স বাংলাদেশের দ্বিতীয় বৃহত্তম বৈদেশিক মুদ্রা অর্জনের উৎস। এই অর্থ পরিবারের দারিদ্র্য দূর করতে, সন্তানদের শিক্ষা নিশ্চিত করতে এবং গ্রামীণ অর্থনীতিকে সচল রাখতে গুরুত্বপূর্ণ ভূমিকা পালন করছে। তবে অভিবাসনের উচ্চ খরচ ও দালালদের প্রতারণা অনেক শ্রমিককে বিপদে ফেলছে।", reference: "Remittances sent by Bangladeshis living abroad play a huge role in the country's economy. After garment exports, remittances are Bangladesh's second largest source of foreign exchange earnings. This money plays an important role in alleviating family poverty, ensuring children's education, and keeping the rural economy active. However, the high cost of migration and fraud by middlemen are putting many workers in difficulty." },
+  { title: "শহরায়ন ও সমস্যা", category: "Social Issues", difficulty: "medium", source: "BCS প্রস্তুতি", original: "বাংলাদেশে দ্রুত শহরায়ন ঘটছে এবং গ্রাম থেকে শহরে মানুষের ঢল অব্যাহত রয়েছে। ঢাকা ও চট্টগ্রামের মতো বড় শহরগুলোতে জনসংখ্যার চাপ অসহনীয় পর্যায়ে পৌঁছেছে। যানজট, বায়ুদূষণ, বস্তি এলাকার বিস্তার এবং পানি ও স্যানিটেশন সংকট নগরজীবনকে কঠিন করে তুলছে। পরিকল্পিত নগরায়ন এবং গ্রামাঞ্চলে কর্মসংস্থান সৃষ্টিই এই সমস্যার দীর্ঘমেয়াদী সমাধান।", reference: "Rapid urbanization is occurring in Bangladesh and the flow of people from villages to cities continues. Population pressure in large cities like Dhaka and Chittagong has reached an unbearable level. Traffic congestion, air pollution, the spread of slum areas, and water and sanitation crises are making urban life difficult. Planned urbanization and creation of employment in rural areas are the long-term solutions to this problem." },
+  { title: "তরুণ প্রজন্ম ও কর্মসংস্থান", category: "Social Issues", difficulty: "easy", source: "প্রথম আলো", original: "বাংলাদেশের জনসংখ্যার একটি বড় অংশ তরুণ এবং এই বিশাল কর্মক্ষম জনগোষ্ঠী দেশের উন্নয়নের সম্ভাবনা ও সুযোগ বাড়িয়েছে। কিন্তু প্রতিবছর লক্ষ লক্ষ তরুণ কর্মবাজারে প্রবেশ করছে, যাদের সবার জন্য কর্মসংস্থান নিশ্চিত করা বড় চ্যালেঞ্জ। প্রচলিত শিক্ষাব্যবস্থা প্রায়ই বাজারের চাহিদার সাথে সংগতিপূর্ণ দক্ষতা তৈরি করতে পারছে না। কারিগরি শিক্ষা ও উদ্যোক্তা উন্নয়নে বিনিয়োগ বাড়ানো এই সমস্যার সমাধানে সহায়ক হতে পারে।", reference: "A large portion of Bangladesh's population is young, and this vast working-age population has increased the country's development potential and opportunities. But millions of young people are entering the job market every year, and ensuring employment for all of them is a major challenge. The conventional education system often fails to develop skills that match market demands. Increasing investment in technical education and entrepreneurship development can help solve this problem." },
+  { title: "মুক্তিযুদ্ধের চেতনা", category: "History", difficulty: "medium", source: "BCS প্রস্তুতি", original: "১৯৭১ সালের মুক্তিযুদ্ধ বাংলাদেশের জাতীয় পরিচয়ের ভিত্তি। লক্ষ লক্ষ মানুষের রক্ত ও আত্মত্যাগের মধ্য দিয়ে অর্জিত স্বাধীনতা আমাদের শেখায় যে সাহস, ঐক্য ও দৃঢ় প্রতিজ্ঞা দিয়ে যেকোনো অসম্ভবকেও সম্ভব করা যায়। মুক্তিযুদ্ধের মূল চেতনা — সাম্য, মানবিক মর্যাদা ও সামাজিক ন্যায়বিচার — আজও আমাদের সংবিধানের মূলনীতি হিসেবে প্রাসঙ্গিক।", reference: "The Liberation War of 1971 is the foundation of Bangladesh's national identity. Independence won through the blood and sacrifice of millions of people teaches us that with courage, unity, and firm determination, even the impossible can be made possible. The core spirit of the Liberation War — equality, human dignity, and social justice — remains relevant today as the founding principles of our constitution." },
+];
+
+// ── additional curated passages ───────────────────────────────────────────────
+
+const EXTRA_E2B = [
+  { title: "The Garment Industry", category: "Economics", difficulty: "medium", source: "The Financial Express", original: "The ready-made garment industry is the lifeblood of Bangladesh's export economy, accounting for over 80 percent of the country's total export earnings. The sector employs more than four million workers, the vast majority of whom are women from rural backgrounds who have migrated to urban areas in search of economic opportunities. The growth of the garment industry has been one of the key drivers of poverty reduction and women's empowerment in Bangladesh. However, ensuring safe working conditions, living wages, and workers' rights remains an ongoing challenge for factory owners, buyers, and the government alike." },
+  { title: "Biodiversity Loss", category: "Environment", difficulty: "hard", source: "The Daily Star", original: "Bangladesh is home to a remarkable diversity of plant and animal species, many of which are found nowhere else on earth. The Sundarbans mangrove forest, shared with India, is one of the world's most biodiverse ecosystems and provides critical protection for coastal communities against cyclones and storm surges. However, this precious biodiversity is under severe threat from habitat destruction, pollution, over-harvesting, and climate change. The loss of biodiversity is not merely an environmental concern; it threatens the livelihoods of communities that depend on natural resources and undermines the ecological services that sustain human civilization." },
+  { title: "Access to Clean Water", category: "Health", difficulty: "medium", source: "BCS Prep", original: "Access to clean drinking water is a fundamental human right, yet millions of people in Bangladesh still lack reliable access to safe water sources. Arsenic contamination of groundwater, particularly in rural areas, is one of the most serious public health crises in the country's history, affecting tens of millions of people. Waterborne diseases caused by contaminated surface water claim thousands of lives every year, particularly among children under five. Investing in safe water infrastructure, promoting water conservation, and addressing industrial water pollution must be top priorities for the government." },
+  { title: "Cultural Heritage", category: "Culture", difficulty: "easy", source: "BCS Prep", original: "Bangladesh possesses a rich and diverse cultural heritage that reflects thousands of years of history and the confluence of multiple civilizations. From the ancient archaeological sites of Mahasthangarh and Paharpur to the living traditions of Baul music, Jamdani weaving, and Mangal Shobhajatra, the cultural wealth of Bangladesh is both extraordinary and fragile. Preserving this heritage requires not only protecting physical monuments and artifacts but also supporting the communities and traditions that keep intangible cultural practices alive. Cultural heritage is not merely a window into the past; it is a source of identity, pride, and inspiration for future generations." },
+  { title: "Mental Health Awareness", category: "Health", difficulty: "medium", source: "The Daily Star", original: "Mental health remains one of the most neglected areas of public health in Bangladesh. Millions of people suffer from depression, anxiety, and other mental health conditions, yet the vast majority never seek or receive professional help due to stigma, lack of awareness, and an acute shortage of mental health professionals. The country has fewer than 300 psychiatrists for a population of over 170 million people. The COVID-19 pandemic significantly worsened mental health outcomes across all age groups. Integrating mental health services into primary healthcare, training community health workers to identify and refer cases, and launching public awareness campaigns to reduce stigma are urgently needed." },
+  { title: "Corruption and Development", category: "Democracy", difficulty: "hard", source: "The Financial Express", original: "Corruption is one of the most significant obstacles to development in Bangladesh. It diverts public resources away from their intended purposes, discourages foreign investment, undermines the quality of public services, and erodes public trust in government institutions. Studies suggest that corruption costs Bangladesh billions of dollars every year in lost revenue and misallocated resources. Tackling corruption requires not only strong anti-corruption institutions and law enforcement but also a change in social norms and a genuine political commitment to accountability and transparency at all levels of government." },
+  { title: "Disaster Risk Reduction", category: "Climate Change", difficulty: "medium", source: "BCS Prep", original: "Bangladesh has developed a world-renowned disaster risk reduction system that has dramatically reduced the death toll from cyclones and floods compared to previous decades. A network of cyclone shelters, early warning systems, and community volunteers enables rapid evacuation of millions of people in the path of approaching storms. This progress has been achieved through a combination of government investment, community participation, and international cooperation. However, as climate change increases the frequency and intensity of extreme weather events, Bangladesh must continue to invest in and strengthen its disaster preparedness systems to protect its vulnerable population." },
+  { title: "Rule of Law", category: "Democracy", difficulty: "hard", source: "The Daily Star", original: "The rule of law is the cornerstone of any just and equitable society. It means that every person, regardless of their wealth, status, or political connections, is subject to the same laws and accountable to the same standards of justice. When the rule of law breaks down, the powerful can act with impunity while ordinary citizens are left without recourse. Bangladesh's legal system faces serious challenges, including case backlogs that leave litigants waiting years for justice, lack of access to legal representation for the poor, and concerns about judicial independence. Strengthening the rule of law must be a national priority." },
+  { title: "Rohingya Crisis", category: "Social Issues", difficulty: "hard", source: "The Daily Star", original: "Bangladesh is hosting over one million Rohingya refugees who fled violence and persecution in Myanmar, making it one of the largest refugee crises in the world. The majority are living in camps in Cox's Bazar, which has become the world's largest refugee settlement. While Bangladesh has demonstrated extraordinary generosity in opening its borders to the Rohingya, the prolonged nature of the crisis is placing severe strain on local resources, infrastructure, and the environment. A durable solution requires international pressure on Myanmar to create conditions for the safe and voluntary return of the Rohingya to their homeland." },
+  { title: "Science and Innovation", category: "Science", difficulty: "medium", source: "BCS Prep", original: "Investment in science, technology, and innovation is essential for Bangladesh to achieve its development aspirations and transition to a knowledge-based economy. The government has established technology parks and incubators to nurture start-ups and attract investment in the ICT sector. Bangladeshi scientists and researchers are making contributions in areas ranging from agricultural biotechnology to climate-resilient crop varieties. However, research funding remains inadequate, the private sector invests little in research and development, and many talented scientists and engineers emigrate abroad in search of better opportunities. Reversing this brain drain requires creating a more enabling environment for scientific research and innovation at home." },
+  { title: "Air Quality Crisis", category: "Environment", difficulty: "medium", source: "The Daily Star", original: "Dhaka consistently ranks among the world's most polluted cities in terms of air quality, with dangerous levels of fine particulate matter that cause respiratory diseases, cardiovascular problems, and premature death. The main sources of air pollution include vehicle emissions, brick kilns operating with outdated technology, industrial pollution, and road dust from construction sites. The government has taken some steps to address the problem, including introducing compressed natural gas buses and banning some of the most polluting vehicles. However, far more comprehensive and consistently enforced measures are needed to bring air quality to safe levels and protect the health of Dhaka's millions of residents." },
+  { title: "Population Growth", category: "Social Issues", difficulty: "easy", source: "BCS Prep", original: "Bangladesh has made significant progress in controlling its population growth rate, which has fallen from around 3 percent in the 1970s to approximately 1 percent today. This demographic transition has been achieved through widespread family planning programs, improvements in women's education, and increased access to reproductive health services. A slower population growth rate has enabled the country to make more meaningful per capita improvements in income, education, and health outcomes. However, the absolute size of the population continues to grow, adding pressure to already strained resources, infrastructure, and the natural environment." },
+  { title: "Judicial Independence", category: "Democracy", difficulty: "hard", source: "The Financial Express", original: "An independent judiciary is indispensable to the functioning of a constitutional democracy. Judges must be free to interpret and apply the law without fear of political interference, intimidation, or inducement. When courts are perceived as being under the influence of the executive branch or powerful interest groups, citizens lose confidence in the legal system and may seek other means to resolve disputes. Bangladesh's constitution guarantees the separation of powers, but ensuring genuine judicial independence in practice requires more than constitutional provisions. It demands transparent appointment processes, adequate salaries and security of tenure for judges, and a legal culture that prioritizes justice over political expediency." },
+];
+
+const EXTRA_B2E = [
+  { title: "মিডিয়ার ভূমিকা", category: "Democracy", difficulty: "medium", source: "প্রথম আলো", original: "গণমাধ্যম একটি গণতান্ত্রিক সমাজের চতুর্থ স্তম্ভ হিসেবে বিবেচিত হয়। সংবাদপত্র, টেলিভিশন ও ডিজিটাল মিডিয়া সরকারের কার্যক্রমের উপর নজরদারি করে, দুর্নীতির বিরুদ্ধে জনমত গড়ে তোলে এবং নাগরিকদের তাদের অধিকার সম্পর্কে সচেতন করে। তবে সংবাদমাধ্যমের স্বাধীনতা নিশ্চিত করতে এবং বিভ্রান্তিকর তথ্য রোধ করতে সমাজের সকল স্তরকে একসাথে কাজ করতে হবে।", reference: "The media is considered the fourth pillar of a democratic society. Newspapers, television, and digital media monitor government activities, build public opinion against corruption, and make citizens aware of their rights. However, all sections of society must work together to ensure freedom of the press and prevent misinformation." },
+  { title: "বিজ্ঞান ও প্রযুক্তি", category: "Science", difficulty: "medium", source: "BCS প্রস্তুতি", original: "বিজ্ঞান ও প্রযুক্তির অগ্রগতি মানবজীবনকে আমূল পরিবর্তন করে দিচ্ছে। কৃত্রিম বুদ্ধিমত্তা, রোবোটিক্স ও জৈবপ্রযুক্তির মতো অত্যাধুনিক প্রযুক্তি স্বাস্থ্যসেবা, কৃষি ও শিল্পখাতে বিপ্লব আনছে। বাংলাদেশকেও এই প্রযুক্তিগত পরিবর্তনের সাথে তাল মিলিয়ে চলতে হবে। বিজ্ঞান শিক্ষায় বিনিয়োগ বাড়ানো এবং গবেষণা ও উদ্ভাবনের পরিবেশ তৈরি করা এক্ষেত্রে সবচেয়ে গুরুত্বপূর্ণ পদক্ষেপ।", reference: "Advances in science and technology are fundamentally transforming human life. Cutting-edge technologies such as artificial intelligence, robotics, and biotechnology are revolutionizing healthcare, agriculture, and the industrial sector. Bangladesh must also keep pace with these technological changes. Increasing investment in science education and creating an environment for research and innovation are the most important steps in this regard." },
+  { title: "সন্ত্রাসবাদ ও নিরাপত্তা", category: "Democracy", difficulty: "hard", source: "প্রথম আলো", original: "সন্ত্রাসবাদ একটি বৈশ্বিক সমস্যা যা বাংলাদেশসহ সব দেশকে প্রভাবিত করছে। ধর্মীয় উগ্রপন্থা, রাজনৈতিক সহিংসতা এবং আন্তর্জাতিক সন্ত্রাসী গোষ্ঠীর প্রভাব জাতীয় নিরাপত্তার জন্য হুমকি তৈরি করছে। সন্ত্রাস মোকাবেলায় শুধু আইনশৃঙ্খলা রক্ষাকারী বাহিনীর তৎপরতা যথেষ্ট নয়; তরুণদের উগ্রপন্থার দিকে ঝুঁকে পড়ার কারণগুলো চিহ্নিত করে সেগুলো দূর করার জন্য সামাজিক ও অর্থনৈতিক কর্মসূচিও জরুরি।", reference: "Terrorism is a global problem affecting all countries, including Bangladesh. Religious extremism, political violence, and the influence of international terrorist organizations are creating threats to national security. Law enforcement activity alone is not enough to combat terrorism; social and economic programs to identify and eliminate the root causes that drive young people toward extremism are also urgently needed." },
+  { title: "খেলাধুলা ও জাতীয় উন্নয়ন", category: "Culture", difficulty: "easy", source: "BCS প্রস্তুতি", original: "খেলাধুলা কেবল বিনোদন নয়, এটি জাতীয় উন্নয়নের একটি গুরুত্বপূর্ণ হাতিয়ার। ক্রিকেট, ফুটবল ও অ্যাথলেটিক্সে বাংলাদেশের সাফল্য আন্তর্জাতিক অঙ্গনে দেশের মর্যাদা বৃদ্ধি করেছে এবং তরুণ প্রজন্মকে অনুপ্রাণিত করেছে। খেলাধুলা শারীরিক সুস্বাস্থ্য নিশ্চিত করার পাশাপাশি সামাজিক সংহতি ও দলগত মনোভাব গড়ে তোলে। সরকারের উচিত স্কুল ও কলেজ পর্যায়ে খেলাধুলার সুযোগ বাড়ানো এবং প্রতিভাবান ক্রীড়াবিদদের পৃষ্ঠপোষকতা করা।", reference: "Sports are not just entertainment; they are an important tool for national development. Bangladesh's success in cricket, football, and athletics has enhanced the country's prestige on the international stage and inspired the younger generation. In addition to ensuring physical health, sports foster social cohesion and a team spirit. The government should increase sports opportunities at the school and college level and provide patronage to talented athletes." },
+  { title: "ইন্টারনেট ও সমাজ", category: "Technology", difficulty: "medium", source: "প্রথম আলো", original: "ইন্টারনেট আধুনিক জীবনের অপরিহার্য অংশ হয়ে উঠেছে। শিক্ষা, তথ্য, বিনোদন এবং ব্যবসা-বাণিজ্যের প্রতিটি ক্ষেত্রে ইন্টারনেটের ব্যবহার ক্রমশ বাড়ছে। তবে ইন্টারনেটের অবাধ ব্যবহার কিছু নেতিবাচক প্রভাবও নিয়ে আসছে, যেমন সাইবার অপরাধ, ভুয়া তথ্য প্রচার এবং তরুণদের মধ্যে সামাজিক যোগাযোগমাধ্যমের আসক্তি। ইন্টারনেটের সুফল পেতে হলে একই সাথে ডিজিটাল সাক্ষরতা বৃদ্ধি ও সাইবার নিরাপত্তা নিশ্চিত করতে হবে।", reference: "The internet has become an indispensable part of modern life. Internet use is steadily increasing in every area of education, information, entertainment, and commerce. However, unrestricted internet use is also bringing some negative effects, such as cybercrime, spread of misinformation, and social media addiction among young people. To enjoy the benefits of the internet, digital literacy must be increased and cybersecurity must be ensured simultaneously." },
+  { title: "পার্বত্য চট্টগ্রাম", category: "Culture", difficulty: "hard", source: "BCS প্রস্তুতি", original: "পার্বত্য চট্টগ্রাম বাংলাদেশের একটি অনন্য অঞ্চল যেখানে বিভিন্ন ক্ষুদ্র নৃগোষ্ঠী বহু শতাব্দী ধরে তাদের নিজস্ব সংস্কৃতি, ভাষা ও জীবনধারা নিয়ে বসবাস করে আসছে। চাকমা, মারমা, ত্রিপুরাসহ এগারোটিরও বেশি নৃগোষ্ঠীর মানুষ এখানে বাস করে। এই অঞ্চলের ভূমি ও বনজসম্পদ রক্ষা এবং ক্ষুদ্র নৃগোষ্ঠীর সাংস্কৃতিক অধিকার নিশ্চিত করা জাতীয় ঐক্য ও সংহতির জন্য গুরুত্বপূর্ণ।", reference: "The Chittagong Hill Tracts is a unique region of Bangladesh where various indigenous ethnic groups have been living for many centuries with their own culture, language, and way of life. More than eleven ethnic groups including Chakma, Marma, and Tripura live here. Protecting the land and forest resources of this region and ensuring the cultural rights of indigenous peoples are important for national unity and cohesion." },
+  { title: "খাদ্য নিরাপত্তা", category: "Agriculture", difficulty: "medium", source: "প্রথম আলো", original: "খাদ্য নিরাপত্তা নিশ্চিত করা বাংলাদেশের সামনে একটি বড় চ্যালেঞ্জ। ক্রমবর্ধমান জনসংখ্যা, কৃষিজমি হ্রাস এবং জলবায়ু পরিবর্তনের প্রভাবে ভবিষ্যতে খাদ্য সংকট দেখা দিতে পারে। তবে উদ্ভাবনী কৃষি প্রযুক্তি, উন্নত বীজের ব্যবহার ও ফসলের বৈচিত্র্য আনার মাধ্যমে এই চ্যালেঞ্জ মোকাবেলা করা সম্ভব। একই সাথে খাদ্য অপচয় রোধ করা এবং পুষ্টি নিরাপত্তা নিশ্চিত করার দিকেও মনোযোগ দিতে হবে।", reference: "Ensuring food security is a major challenge facing Bangladesh. A food crisis may arise in the future due to growing population, decreasing agricultural land, and the effects of climate change. However, it is possible to meet this challenge through innovative agricultural technology, use of improved seeds, and crop diversification. At the same time, attention must be paid to preventing food waste and ensuring nutritional security." },
+  { title: "মাতৃভাষার গুরুত্ব", category: "Culture", difficulty: "easy", source: "BCS প্রস্তুতি", original: "মাতৃভাষা কেবল যোগাযোগের মাধ্যম নয়, এটি একটি জাতির সংস্কৃতি, ঐতিহ্য এবং পরিচয়ের ধারক। বাংলা ভাষার জন্য বাংলাদেশের মানুষ যে আত্মত্যাগ করেছে, তা বিশ্বের ইতিহাসে অতুলনীয়। ১৯৫২ সালের ভাষা আন্দোলন আমাদের শেখিয়েছে যে ভাষার অধিকার মানুষের সবচেয়ে মৌলিক অধিকারগুলোর একটি। ইউনেসকো ২১শে ফেব্রুয়ারিকে আন্তর্জাতিক মাতৃভাষা দিবস হিসেবে স্বীকৃতি দিয়ে এই সত্যকেই সমগ্র বিশ্বের সামনে তুলে ধরেছে।", reference: "A mother tongue is not merely a means of communication; it is the carrier of a nation's culture, heritage, and identity. The sacrifice made by the people of Bangladesh for the Bengali language is unparalleled in world history. The Language Movement of 1952 taught us that the right to one's language is one of the most fundamental rights of human beings. UNESCO recognized February 21 as International Mother Language Day, bringing this truth before the entire world." },
+  { title: "সুন্দরবন রক্ষা", category: "Environment", difficulty: "medium", source: "প্রথম আলো", original: "সুন্দরবন পৃথিবীর বৃহত্তম ম্যানগ্রোভ বন এবং বাংলাদেশের একটি অমূল্য প্রাকৃতিক সম্পদ। এটি বাংলাদেশের উপকূলীয় অঞ্চলকে ঘূর্ণিঝড় ও জলোচ্ছ্বাস থেকে রক্ষা করে এবং লক্ষ লক্ষ মানুষের জীবিকার উৎস। রয়েল বেঙ্গল টাইগারসহ বিভিন্ন বিপন্ন প্রজাতির আবাসস্থল হিসেবে সুন্দরবনের বিশ্বব্যাপী পরিচিতি রয়েছে। শিল্পায়ন, দূষণ ও জলবায়ু পরিবর্তনের হুমকি থেকে এই অতুলনীয় বনকে রক্ষা করা জাতীয় দায়িত্ব।", reference: "The Sundarbans is the world's largest mangrove forest and an invaluable natural resource of Bangladesh. It protects Bangladesh's coastal areas from cyclones and storm surges and is a source of livelihood for millions of people. The Sundarbans is globally known as the habitat of various endangered species, including the Royal Bengal Tiger. Protecting this incomparable forest from the threats of industrialization, pollution, and climate change is a national responsibility." },
+  { title: "প্রবীণদের সমস্যা", category: "Social Issues", difficulty: "medium", source: "BCS প্রস্তুতি", original: "বাংলাদেশে বয়স্ক জনগোষ্ঠীর সংখ্যা দিন দিন বাড়ছে। অনেক প্রবীণ ব্যক্তি একাকিত্ব, দারিদ্র্য ও স্বাস্থ্যসেবার অভাবে কষ্টভোগ করছেন। একান্নবর্তী পরিবারের ভাঙনের কারণে অনেক বৃদ্ধ মা-বাবা সন্তানদের কাছ থেকে বিচ্ছিন্ন হয়ে পড়ছেন। সরকারি পেনশন ব্যবস্থার সম্প্রসারণ, প্রবীণ নিবাস স্থাপন এবং পরিবারগুলোকে তাদের বয়স্ক সদস্যদের যত্ন নিতে উৎসাহিত করা এই সমস্যার সমাধানে সহায়ক হতে পারে।", reference: "The number of elderly people in Bangladesh is increasing day by day. Many elderly people are suffering from loneliness, poverty, and lack of healthcare. Due to the breakdown of the joint family system, many elderly parents are becoming separated from their children. Expanding the government pension system, establishing care homes for the elderly, and encouraging families to take care of their elderly members can help solve this problem." },
+  { title: "শিশু অধিকার", category: "Social Issues", difficulty: "medium", source: "প্রথম আলো", original: "শিশুরা একটি জাতির ভবিষ্যৎ। তবে বাংলাদেশে লক্ষ লক্ষ শিশু এখনো শিক্ষা, স্বাস্থ্যসেবা ও নিরাপদ পরিবেশ থেকে বঞ্চিত। শিশুশ্রম, বাল্যবিবাহ এবং শিশু পাচার তাদের বিকাশের পথে বাধা। জাতিসংঘ শিশু অধিকার সনদ অনুযায়ী প্রতিটি শিশুর বাঁচার, বেড়ে ওঠার ও নিজের সম্ভাবনা পূর্ণরূপে বিকশিত করার অধিকার রয়েছে। সরকার, পরিবার ও সুশীল সমাজকে একসাথে কাজ করতে হবে যাতে প্রতিটি শিশু তার অধিকার পায়।", reference: "Children are the future of a nation. However, millions of children in Bangladesh are still deprived of education, healthcare, and a safe environment. Child labor, child marriage, and child trafficking are obstacles to their development. According to the United Nations Convention on the Rights of the Child, every child has the right to survive, grow, and fully develop their potential. The government, families, and civil society must work together to ensure that every child receives their rights." },
+];
+
+// ── assemble & write ──────────────────────────────────────────────────────────
+
+async function main() {
+  // Try scraping real articles
+  let e2bScraped = [];
+  let b2eScraped = [];
+
+  try {
+    e2bScraped = await getDSEditorials();
+    console.log(`Got ${e2bScraped.length} E2B scraped passages`);
+  } catch (e) {
+    console.warn("Scraping E2B failed, using curated only:", e.message);
+  }
+
+  try {
+    b2eScraped = await getProthomAlo();
+    console.log(`Got ${b2eScraped.length} B2E scraped passages`);
+  } catch (e) {
+    console.warn("Scraping B2E failed, using curated only:", e.message);
+  }
+
+  // Build passage objects
+  const passages = [];
+  let id = 1;
+
+  // Curated E2B
+  const allCuratedE2B = [...CURATED_E2B, ...EXTRA_E2B];
+  for (const p of allCuratedE2B) {
+    passages.push({ id: id++, direction: "E2B", reference: "", ...p });
+  }
+
+  // Scraped E2B (deduplicate by first 50 chars)
+  const seen = new Set(allCuratedE2B.map(p => p.original.slice(0, 50)));
+  const dsCategories = ["Economics", "Environment", "Democracy", "Health", "Social Issues", "Education", "Culture", "Science", "Agriculture", "Technology"];
+  let catIdx = 0;
+  for (const text of e2bScraped) {
+    const key = text.slice(0, 50);
+    if (seen.has(key) || text.length < 100) continue;
+    seen.add(key);
+    const cat = dsCategories[catIdx % dsCategories.length];
+    catIdx++;
+    const wordCount = text.split(/\s+/).length;
+    const diff = wordCount > 100 ? "hard" : wordCount > 70 ? "medium" : "easy";
+    passages.push({
+      id: id++,
+      direction: "E2B",
+      category: cat,
+      difficulty: diff,
+      source: "The Daily Star",
+      title: `Editorial Passage ${id - 1}`,
+      original: text,
+      reference: "",
+    });
+    if (passages.filter(p => p.direction === "E2B").length >= 60) break;
+  }
+
+  // Curated B2E
+  const allCuratedB2E = [...CURATED_B2E, ...EXTRA_B2E];
+  for (const p of allCuratedB2E) {
+    passages.push({ id: id++, direction: "B2E", ...p });
+  }
+
+  // Scraped B2E
+  const seenB = new Set(allCuratedB2E.map(p => p.original.slice(0, 30)));
+  const paCategories = ["Economics", "Democracy", "Health", "Education", "Environment", "Social Issues", "Culture", "Agriculture", "Science", "Technology"];
+  let paCatIdx = 0;
+  for (const text of b2eScraped) {
+    const key = text.slice(0, 30);
+    if (seenB.has(key)) continue;
+    const hasBengali = /[ঀ-৿]/.test(text);
+    if (!hasBengali || text.length < 80) continue;
+    seenB.add(key);
+    const cat = paCategories[paCatIdx % paCategories.length];
+    paCatIdx++;
+    const wordCount = text.split(/\s+/).length;
+    const diff = wordCount > 80 ? "hard" : wordCount > 50 ? "medium" : "easy";
+    passages.push({
+      id: id++,
+      direction: "B2E",
+      category: cat,
+      difficulty: diff,
+      source: "Prothom Alo",
+      title: `অনুচ্ছেদ ${id - 1}`,
+      original: text,
+      reference: "",
+    });
+    if (passages.filter(p => p.direction === "B2E").length >= 55) break;
+  }
+
+  console.log(`Total passages: ${passages.length} (E2B: ${passages.filter(p=>p.direction==="E2B").length}, B2E: ${passages.filter(p=>p.direction==="B2E").length})`);
+
+  // Serialize to TS
+  const ts = `// Auto-generated by scripts/scrape-passages.mjs
+// Regenerate: node scripts/scrape-passages.mjs
+
+export type Passage = {
+  id: number;
+  direction: "E2B" | "B2E";
+  category: string;
+  difficulty: "easy" | "medium" | "hard";
+  source: string;
+  title: string;
+  original: string;
+  reference: string;
+};
+
+export const passages: Passage[] = ${JSON.stringify(passages, null, 2)};
+
+export const passageCategories = [...new Set(passages.map((p) => p.category))].sort();
+`;
+
+  const outPath = join(__dirname, "../data/passages.ts");
+  writeFileSync(outPath, ts, "utf8");
+  console.log(`✅ Written to ${outPath}`);
+  console.log(`   Total: ${passages.length} passages`);
+}
+
+main().catch(console.error);
