@@ -18,9 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-full flex">
+      <body className="min-h-full">
         <Navigation />
-        <main className="flex-1 md:ml-64 pt-16 md:pt-0 p-4 md:p-8 min-h-screen">{children}</main>
+        <main className="md:ml-64 pt-16 md:pt-0 p-4 md:p-8 min-h-screen w-full">{children}</main>
       </body>
     </html>
   );

@@ -16,8 +16,6 @@
 
 * { box-sizing: border-box; }
 
-html, body { overflow-x: hidden; }
-
 body {
   background: var(--bg);
   color: var(--text);
