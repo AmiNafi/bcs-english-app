@@ -63,6 +63,7 @@ function EntryCard({ entry }: { entry: TranslationEntry }) {
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="font-bold text-white">{entry.english}</span>
             <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: dc.bg, color: dc.text }}>{entry.difficulty}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--surface2)", color: "var(--muted)" }}>{entry.category}</span>
           </div>
           <div className="bangla text-base font-semibold" style={{ color: "#a5b4fc" }}>{entry.bangla}</div>
         </div>
@@ -174,7 +175,7 @@ export default function TranslationPage() {
   const tabs: { id: Tab; label: string; icon: string; count?: number; badge?: boolean }[] = [
     { id: "phrasal",   label: "Phrasal Verbs",    icon: "🔗", count: phrasalVerbs.length },
     { id: "idioms",    label: "Idioms & Phrases", icon: "💬", count: idiomsAndPhrases.length },
-    { id: "linking",   label: "Linking Verbs",    icon: "🔤", count: linkingVerbs.length },
+    { id: "linking",   label: "Links & Connectors", icon: "🔤", count: linkingVerbs.length },
     { id: "sentences", label: "Sentences",         icon: "📄", count: sampleSentences.length },
     { id: "passages",  label: "Passages",          icon: "📖", count: passages.length },
     { id: "weak",      label: "Weak Areas",        icon: "⚠️", count: weakItems.length, badge: weakItems.length > 0 },
@@ -241,7 +242,7 @@ export default function TranslationPage() {
         <div>
           <div className="card mb-4" style={{ background: "rgba(99,102,241,0.08)", borderColor: "#6366f1" }}>
             <p className="text-sm" style={{ color: "#a5b4fc" }}>
-              <strong className="text-white">Linking verbs</strong> connect the subject to a descriptive word. Always use an <strong>adjective</strong> (not adverb) after them — e.g. &quot;She feels <u>happy</u>&quot; not &quot;happily&quot;.
+              <strong className="text-white">Linking verbs</strong> connect the subject to a descriptive adjective/noun (e.g. <em>seem, become, feel</em>). <strong>Connectors</strong> join clauses and ideas — coordinating conjunctions (FANBOYS), subordinating conjunctions, correlatives, and transitional words. All are essential for BCS writing.
             </p>
           </div>
           <input className="mb-4" placeholder="Filter linking verbs..." value={filter} onChange={(e) => setFilter(e.target.value)} />
