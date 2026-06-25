@@ -407,22 +407,27 @@ export default function TranslationPage() {
 
       {/* ── Passage detail & evaluation ── */}
       {tab === "passages" && selectedPassage && (
-        <div className="fade-in">
+        <div className="fade-in" style={{ minWidth: 0, overflowX: "hidden" }}>
           <button className="btn btn-secondary mb-4" onClick={() => { setSelectedPassage(null); setEvalResult(null); }}>← Back</button>
 
-          <div className="card mb-4">
+          {/* Passage text */}
+          <div className="card mb-4" style={{ wordBreak: "break-word", overflowWrap: "anywhere" }}>
             <div className="flex items-center gap-2 mb-3 flex-wrap">
-              <span className="font-bold text-white">{selectedPassage.title}</span>
+              <span className="font-bold text-white text-sm">{selectedPassage.title}</span>
               <span className="badge" style={{ background: selectedPassage.direction === "E2B" ? "rgba(99,102,241,0.2)" : "rgba(16,185,129,0.2)", color: selectedPassage.direction === "E2B" ? "#a5b4fc" : "#6ee7b7", fontSize: "0.65rem" }}>
-                {selectedPassage.direction === "E2B" ? "English → Bangla" : "Bangla → English"}
+                {selectedPassage.direction === "E2B" ? "EN→BN" : "BN→EN"}
               </span>
               <span className={`badge badge-${selectedPassage.difficulty}`}>{selectedPassage.difficulty}</span>
             </div>
-            <div className={selectedPassage.direction === "B2E" ? "bangla leading-relaxed text-white" : "text-white leading-relaxed"}>
+            <div
+              className={selectedPassage.direction === "B2E" ? "bangla leading-relaxed text-white" : "text-white leading-relaxed"}
+              style={{ fontSize: "0.95rem", wordBreak: "break-word", overflowWrap: "anywhere" }}
+            >
               {selectedPassage.original}
             </div>
           </div>
 
+          {/* Translation input */}
           {!evalResult && (
             <div className="card mb-4">
               <label className="block text-sm font-semibold mb-2 text-white">
@@ -431,70 +436,72 @@ export default function TranslationPage() {
               <textarea value={userTranslation} onChange={(e) => setUserTranslation(e.target.value)}
                 placeholder={selectedPassage.direction === "E2B" ? "এখানে বাংলা অনুবাদ লিখুন…" : "Write your English translation here…"}
                 rows={6} className={selectedPassage.direction === "E2B" ? "bangla" : ""}
-                style={{ resize: "vertical", fontSize: selectedPassage.direction === "E2B" ? "1.05rem" : "1rem", lineHeight: "1.8" }} />
-              <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
+                style={{ resize: "vertical", fontSize: "1rem", lineHeight: "1.8", width: "100%" }} />
+              <div className="flex items-center justify-between mt-3 gap-2 flex-wrap">
                 <span className="text-xs" style={{ color: "var(--muted)" }}>{userTranslation.trim().split(/\s+/).filter(Boolean).length} words</span>
                 <button className="btn btn-primary" onClick={submitEvaluation}
                   disabled={evaluating || userTranslation.trim().length < 10}
-                  style={{ opacity: userTranslation.trim().length < 10 ? 0.5 : 1 }}>
-                  {evaluating ? "⏳ Evaluating…" : "🤖 Submit for AI Evaluation"}
+                  style={{ opacity: userTranslation.trim().length < 10 ? 0.5 : 1, fontSize: "0.85rem" }}>
+                  {evaluating ? "⏳ Evaluating…" : "🤖 AI Evaluate"}
                 </button>
               </div>
               {evalError && <p className="mt-2 text-sm" style={{ color: "#fca5a5" }}>❌ {evalError}</p>}
             </div>
           )}
 
+          {/* Results */}
           {evalResult && (
-            <div className="fade-in space-y-4">
+            <div className="fade-in space-y-3">
+              {/* Score */}
               <div className="card text-center" style={{ borderColor: scoreColor(evalResult.score) }}>
                 <div className="text-5xl font-bold mb-1" style={{ color: scoreColor(evalResult.score) }}>{evalResult.score}</div>
-                <div className="text-xl font-bold mb-1" style={{ color: gradeColor(evalResult.grade) }}>Grade: {evalResult.grade}</div>
-                <div className="text-sm font-semibold mb-3" style={{ color: "var(--muted)" }}>{evalResult.accuracy}</div>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{evalResult.feedback}</p>
+                <div className="text-lg font-bold mb-1" style={{ color: gradeColor(evalResult.grade) }}>Grade: {evalResult.grade}</div>
+                <div className="text-sm font-semibold mb-2" style={{ color: "var(--muted)" }}>{evalResult.accuracy}</div>
+                <p className="text-sm leading-relaxed" style={{ color: "var(--muted)", wordBreak: "break-word" }}>{evalResult.feedback}</p>
                 {evalResult.corrections?.length > 0 && (
                   <div className="mt-3 text-xs p-2 rounded-lg" style={{ background: "rgba(239,68,68,0.1)", color: "#fca5a5" }}>
-                    ⚠️ {evalResult.corrections.length} mistake{evalResult.corrections.length !== 1 ? "s" : ""} saved to your <strong>Weak Areas</strong> tab
+                    ⚠️ {evalResult.corrections.length} mistake{evalResult.corrections.length !== 1 ? "s" : ""} saved to <strong>Weak Areas</strong>
                   </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Strengths & Improvements stacked on mobile */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="card">
-                  <h3 className="font-semibold text-green-400 mb-2">✅ Strengths</h3>
-                  <ul className="space-y-1">{evalResult.strengths.map((s, i) => <li key={i} className="text-sm" style={{ color: "var(--muted)" }}>• {s}</li>)}</ul>
+                  <h3 className="font-semibold text-green-400 mb-2 text-sm">✅ Strengths</h3>
+                  <ul className="space-y-1">{evalResult.strengths.map((s, i) => <li key={i} className="text-sm" style={{ color: "var(--muted)", wordBreak: "break-word" }}>• {s}</li>)}</ul>
                 </div>
                 <div className="card">
-                  <h3 className="font-semibold text-yellow-400 mb-2">💡 Improvements</h3>
-                  <ul className="space-y-1">{evalResult.improvements.map((s, i) => <li key={i} className="text-sm" style={{ color: "var(--muted)" }}>• {s}</li>)}</ul>
+                  <h3 className="font-semibold text-yellow-400 mb-2 text-sm">💡 Improvements</h3>
+                  <ul className="space-y-1">{evalResult.improvements.map((s, i) => <li key={i} className="text-sm" style={{ color: "var(--muted)", wordBreak: "break-word" }}>• {s}</li>)}</ul>
                 </div>
               </div>
 
+              {/* Corrections — stacked, not inline */}
               {evalResult.corrections?.length > 0 && (
                 <div className="card">
-                  <h3 className="font-semibold text-white mb-3">🔧 Corrections</h3>
+                  <h3 className="font-semibold text-white mb-3 text-sm">🔧 Corrections</h3>
                   <div className="space-y-3">
                     {evalResult.corrections.map((c, i) => (
-                      <div key={i} className="p-3 rounded-lg" style={{ background: "var(--surface2)" }}>
-                        <div className="text-sm mb-1">
-                          <span style={{ color: "#fca5a5" }}>✗ {c.original}</span>
-                          <span className="mx-2" style={{ color: "var(--muted)" }}>→</span>
-                          <span style={{ color: "#6ee7b7" }}>✓ {c.corrected}</span>
-                        </div>
-                        <div className="text-xs" style={{ color: "var(--muted)" }}>{c.reason}</div>
+                      <div key={i} className="p-3 rounded-lg space-y-1" style={{ background: "var(--surface2)" }}>
+                        <div className="text-sm" style={{ color: "#fca5a5", wordBreak: "break-word" }}>✗ {c.original}</div>
+                        <div className="text-sm" style={{ color: "#6ee7b7", wordBreak: "break-word" }}>✓ {c.corrected}</div>
+                        <div className="text-xs pt-1" style={{ borderTop: "1px solid var(--border)", color: "var(--muted)", wordBreak: "break-word" }}>{c.reason}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
+              {/* Your translation */}
               <div className="card">
-                <h3 className="font-semibold text-white mb-2">Your Translation</h3>
-                <p className={`text-sm leading-relaxed ${selectedPassage.direction === "E2B" ? "bangla" : ""}`} style={{ color: "var(--muted)" }}>{userTranslation}</p>
+                <h3 className="font-semibold text-white mb-2 text-sm">Your Translation</h3>
+                <p className={`text-sm leading-relaxed ${selectedPassage.direction === "E2B" ? "bangla" : ""}`} style={{ color: "var(--muted)", wordBreak: "break-word" }}>{userTranslation}</p>
               </div>
 
               <div className="flex gap-3">
-                <button className="btn btn-secondary flex-1" onClick={() => { setEvalResult(null); setUserTranslation(""); }}>Try Again</button>
-                <button className="btn btn-primary flex-1" onClick={() => { setSelectedPassage(null); setEvalResult(null); setUserTranslation(""); }}>Next Passage</button>
+                <button className="btn btn-secondary flex-1 text-sm" onClick={() => { setEvalResult(null); setUserTranslation(""); }}>Try Again</button>
+                <button className="btn btn-primary flex-1 text-sm" onClick={() => { setSelectedPassage(null); setEvalResult(null); setUserTranslation(""); }}>Next Passage</button>
               </div>
             </div>
           )}
