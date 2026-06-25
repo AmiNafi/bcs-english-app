@@ -23,7 +23,13 @@ export default function QuizPage() {
     if (filter !== "all") q = q.filter((x) => x.type === filter);
     if (difficulty !== "all") q = q.filter((x) => x.difficulty === difficulty);
     q.sort(() => Math.random() - 0.5);
-    setQuestions(q.slice(0, 15));
+    // Shuffle options within each question while keeping correct answer tracked
+    q = q.slice(0, 15).map((question) => {
+      const correctText = question.options[question.correct];
+      const shuffled = [...question.options].sort(() => Math.random() - 0.5);
+      return { ...question, options: shuffled, correct: shuffled.indexOf(correctText) };
+    });
+    setQuestions(q);
     setAnswers([]);
     setIndex(0);
     setSelected(null);
