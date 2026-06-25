@@ -44,10 +44,10 @@ function loadWeak(): WeakItem[] {
 function saveWeak(items: WeakItem[]) {
   localStorage.setItem(WEAK_KEY, JSON.stringify(items));
 }
-function loadAttempts(): Record<string, AttemptRecord> {
+function loadAttempts(): Record<number, AttemptRecord> {
   try { return JSON.parse(localStorage.getItem(ATTEMPTS_KEY) ?? "{}"); } catch { return {}; }
 }
-function saveAttempt(passageId: string, record: AttemptRecord) {
+function saveAttempt(passageId: number, record: AttemptRecord) {
   const all = loadAttempts();
   all[passageId] = record;
   localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(all));
@@ -152,7 +152,7 @@ export default function TranslationPage() {
   const [tab, setTab] = useState<Tab>("passages");
   const [filter, setFilter] = useState("");
   const [weakItems, setWeakItems] = useState<WeakItem[]>([]);
-  const [attempts, setAttempts] = useState<Record<string, AttemptRecord>>({});
+  const [attempts, setAttempts] = useState<Record<number, AttemptRecord>>({});
 
   useEffect(() => {
     setWeakItems(loadWeak());
