@@ -145,17 +145,14 @@ export default function VocabularyPage() {
                 </div>
                 <span className={`badge badge-${word.difficulty}`}>{word.difficulty}</span>
               </div>
-              <div className="bangla text-lg font-semibold mb-2" style={{ color: "#a5b4fc" }}>
-                {word.bangla}
-              </div>
               <div className="text-sm" style={{ color: "var(--muted)" }}>
                 <span className="font-medium" style={{ color: "#94a3b8" }}>{word.partOfSpeech}</span>
-                {" · "}
-                {word.definition.length > 70 ? word.definition.slice(0, 70) + "…" : word.definition}
+                {selected?.id !== word.id && <span className="ml-2 text-xs italic">tap to reveal →</span>}
               </div>
 
               {selected?.id === word.id && (
                 <div className="mt-4 pt-4 fade-in" style={{ borderTop: "1px solid var(--border)" }}>
+                  <div className="bangla text-xl font-semibold mb-2" style={{ color: "#a5b4fc" }}>{word.bangla}</div>
                   <p className="text-sm mb-3" style={{ color: "var(--muted)" }}>{word.definition}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
                     <div>
