@@ -244,11 +244,18 @@ export default function TranslationPage() {
         ))}
       </div>
 
+      {/* ── Shared reveal hint banner ── */}
+      {(tab === "phrasal" || tab === "idioms" || tab === "linking" || tab === "sentences") && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4 text-sm" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", color: "#fcd34d" }}>
+          <span>👆</span>
+          <span>Click any card to reveal the Bangla meaning, grammar note & example</span>
+        </div>
+      )}
+
       {/* ── Phrasal Verbs ── */}
       {tab === "phrasal" && (
         <div>
           <input className="mb-4" placeholder="Filter phrasal verbs..." value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Tap any card to see grammar note & example sentence.</p>
           <div className="space-y-2">{filteredPhrasal.map((e, i) => <EntryCard key={i} entry={e} />)}</div>
         </div>
       )}
@@ -257,7 +264,6 @@ export default function TranslationPage() {
       {tab === "idioms" && (
         <div>
           <input className="mb-4" placeholder="Filter idioms and phrases..." value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Tap any card to see grammar note & example sentence.</p>
           <div className="space-y-2">{filteredIdioms.map((e, i) => <EntryCard key={i} entry={e} />)}</div>
         </div>
       )}
@@ -270,8 +276,7 @@ export default function TranslationPage() {
               <strong className="text-white">Linking verbs</strong> connect the subject to a descriptive adjective/noun (e.g. <em>seem, become, feel</em>). <strong>Connectors</strong> join clauses and ideas — coordinating conjunctions (FANBOYS), subordinating conjunctions, correlatives, and transitional words. All are essential for BCS writing.
             </p>
           </div>
-          <input className="mb-4" placeholder="Filter linking verbs..." value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <p className="text-xs mb-3" style={{ color: "var(--muted)" }}>Tap any card to see grammar note & example sentence.</p>
+          <input className="mb-4" placeholder="Filter linking verbs & connectors..." value={filter} onChange={(e) => setFilter(e.target.value)} />
           <div className="space-y-2">{filteredLinking.map((e, i) => <EntryCard key={i} entry={e} />)}</div>
         </div>
       )}
