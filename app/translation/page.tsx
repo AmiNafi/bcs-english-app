@@ -1,9 +1,9 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { phrasalVerbs, idiomsAndPhrases, sampleSentences, linkingVerbs, TranslationEntry } from "@/data/translations";
 import { passages, passageCategories, Passage } from "@/data/passages";
 
-type Tab = "phrasal" | "idioms" | "linking" | "sentences" | "passages";
+type Tab = "phrasal" | "idioms" | "linking" | "sentences" | "passages" | "weak";
 
 type EvalResult = {
   score: number;
@@ -15,6 +15,39 @@ type EvalResult = {
   corrections: { original: string; corrected: string; reason: string }[];
 };
 
+export type WeakItem = {
+  id: string;
+  passageTitle: string;
+  direction: "E2B" | "B2E";
+  original: string;
+  corrected: string;
+  reason: string;
+  addedAt: number;
+  relatedEntries: TranslationEntry[];
+};
+
+const WEAK_KEY = "bcs_weak_areas";
+
+function loadWeak(): WeakItem[] {
+  try { return JSON.parse(localStorage.getItem(WEAK_KEY) ?? "[]"); } catch { return []; }
+}
+function saveWeak(items: WeakItem[]) {
+  localStorage.setItem(WEAK_KEY, JSON.stringify(items));
+}
+
+const allEntries = [...phrasalVerbs, ...idiomsAndPhrases, ...linkingVerbs];
+
+function findRelated(text: string): TranslationEntry[] {
+  const words = text.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  return allEntries.filter((e) =>
+    words.some((w) =>
+      e.english.toLowerCase().includes(w) ||
+      e.bangla.includes(w) ||
+      e.grammaticalNote.toLowerCase().includes(w)
+    )
+  ).slice(0, 3);
+}
+
 const diffColor = (d: string) =>
   d === "easy" ? { bg: "rgba(16,185,129,0.15)", text: "#10b981" } :
   d === "medium" ? { bg: "rgba(245,158,11,0.15)", text: "#f59e0b" } :
@@ -24,24 +57,17 @@ function EntryCard({ entry }: { entry: TranslationEntry }) {
   const [open, setOpen] = useState(false);
   const dc = diffColor(entry.difficulty);
   return (
-    <div
-      className="card fade-in"
-      style={{ cursor: "pointer", transition: "border-color 0.15s" }}
-      onClick={() => setOpen((o) => !o)}
-    >
+    <div className="card fade-in" style={{ cursor: "pointer" }} onClick={() => setOpen((o) => !o)}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="font-bold text-white">{entry.english}</span>
-            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: dc.bg, color: dc.text }}>
-              {entry.difficulty}
-            </span>
+            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: dc.bg, color: dc.text }}>{entry.difficulty}</span>
           </div>
           <div className="bangla text-base font-semibold" style={{ color: "#a5b4fc" }}>{entry.bangla}</div>
         </div>
         <span className="text-lg flex-shrink-0 mt-1" style={{ color: "var(--muted)" }}>{open ? "▲" : "▼"}</span>
       </div>
-
       {open && (
         <div className="mt-3 pt-3 space-y-2 fade-in" style={{ borderTop: "1px solid var(--border)" }}>
           <div className="flex items-start gap-2 text-sm p-2 rounded-lg" style={{ background: "var(--surface2)" }}>
@@ -61,6 +87,9 @@ function EntryCard({ entry }: { entry: TranslationEntry }) {
 export default function TranslationPage() {
   const [tab, setTab] = useState<Tab>("phrasal");
   const [filter, setFilter] = useState("");
+  const [weakItems, setWeakItems] = useState<WeakItem[]>([]);
+
+  useEffect(() => { setWeakItems(loadWeak()); }, []);
 
   const [pDirection, setPDirection] = useState<"all" | "E2B" | "B2E">("all");
   const [pCategory, setPCategory] = useState("all");
@@ -99,23 +128,56 @@ export default function TranslationPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ original: selectedPassage.original, userTranslation: userTranslation.trim(), reference: selectedPassage.reference || "", direction: selectedPassage.direction }),
       });
-      const data = await res.json();
-      if (data.error) setEvalError(data.error); else setEvalResult(data);
+      const data = await res.json() as EvalResult & { error?: string };
+      if (data.error) {
+        setEvalError(data.error);
+      } else {
+        setEvalResult(data);
+        // Save mistakes to weak areas
+        if (data.corrections?.length > 0) {
+          const existing = loadWeak();
+          const newItems: WeakItem[] = data.corrections.map((c, i) => ({
+            id: `${Date.now()}-${i}`,
+            passageTitle: selectedPassage.title,
+            direction: selectedPassage.direction,
+            original: c.original,
+            corrected: c.corrected,
+            reason: c.reason,
+            addedAt: Date.now(),
+            relatedEntries: findRelated(c.original + " " + c.corrected),
+          }));
+          const merged = [...newItems, ...existing].slice(0, 50);
+          saveWeak(merged);
+          setWeakItems(merged);
+        }
+      }
     } catch { setEvalError("Network error. Please try again."); }
     finally { setEvaluating(false); }
   }
 
   function openPassage(p: Passage) { setSelectedPassage(p); setUserTranslation(""); setEvalResult(null); setEvalError(""); }
 
+  function removeWeak(id: string) {
+    const updated = weakItems.filter((w) => w.id !== id);
+    saveWeak(updated);
+    setWeakItems(updated);
+  }
+
+  function clearWeak() {
+    saveWeak([]);
+    setWeakItems([]);
+  }
+
   const gradeColor = (g: string) => g === "A+" || g === "A" ? "#10b981" : g === "B" ? "#f59e0b" : g === "C" ? "#f97316" : "#ef4444";
   const scoreColor = (s: number) => s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : s >= 40 ? "#f97316" : "#ef4444";
 
-  const tabs: { id: Tab; label: string; icon: string; count?: number }[] = [
+  const tabs: { id: Tab; label: string; icon: string; count?: number; badge?: boolean }[] = [
     { id: "phrasal",   label: "Phrasal Verbs",    icon: "🔗", count: phrasalVerbs.length },
     { id: "idioms",    label: "Idioms & Phrases", icon: "💬", count: idiomsAndPhrases.length },
     { id: "linking",   label: "Linking Verbs",    icon: "🔤", count: linkingVerbs.length },
     { id: "sentences", label: "Sentences",         icon: "📄", count: sampleSentences.length },
     { id: "passages",  label: "Passages",          icon: "📖", count: passages.length },
+    { id: "weak",      label: "Weak Areas",        icon: "⚠️", count: weakItems.length, badge: weakItems.length > 0 },
   ];
 
   return (
@@ -126,27 +188,31 @@ export default function TranslationPage() {
       </div>
 
       {/* ── Card-based tab selector ── */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-6">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => { setTab(t.id); setFilter(""); }}
-            className="card text-center p-3"
+            className="card text-center p-3 relative"
             style={{
               cursor: "pointer",
-              border: tab === t.id ? "2px solid #6366f1" : "1px solid var(--border)",
-              background: tab === t.id ? "rgba(99,102,241,0.12)" : "var(--surface)",
+              border: tab === t.id ? "2px solid" : "1px solid var(--border)",
+              borderColor: tab === t.id ? (t.id === "weak" ? "#ef4444" : "#6366f1") : "var(--border)",
+              background: tab === t.id ? (t.id === "weak" ? "rgba(239,68,68,0.1)" : "rgba(99,102,241,0.12)") : "var(--surface)",
               transition: "all 0.15s",
             }}
           >
             <div className="text-xl mb-1">{t.icon}</div>
-            <div className="text-xs font-semibold leading-tight" style={{ color: tab === t.id ? "#a5b4fc" : "var(--muted)" }}>
+            <div className="text-xs font-semibold leading-tight" style={{ color: tab === t.id ? (t.id === "weak" ? "#fca5a5" : "#a5b4fc") : "var(--muted)" }}>
               {t.label}
             </div>
             {t.count !== undefined && (
-              <div className="text-xs mt-1 font-bold" style={{ color: tab === t.id ? "#6366f1" : "var(--border)" }}>
+              <div className="text-xs mt-1 font-bold" style={{ color: t.id === "weak" && t.count > 0 ? "#ef4444" : tab === t.id ? "#6366f1" : "var(--border)" }}>
                 {t.count}
               </div>
+            )}
+            {t.badge && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full" style={{ background: "#ef4444" }} />
             )}
           </button>
         ))}
@@ -175,7 +241,7 @@ export default function TranslationPage() {
         <div>
           <div className="card mb-4" style={{ background: "rgba(99,102,241,0.08)", borderColor: "#6366f1" }}>
             <p className="text-sm" style={{ color: "#a5b4fc" }}>
-              <strong className="text-white">Linking verbs</strong> connect the subject to a descriptive word. They do <em>not</em> show action. Always use an <strong>adjective</strong> (not adverb) after them — e.g. &quot;She feels <u>happy</u>&quot; not &quot;happily&quot;.
+              <strong className="text-white">Linking verbs</strong> connect the subject to a descriptive word. Always use an <strong>adjective</strong> (not adverb) after them — e.g. &quot;She feels <u>happy</u>&quot; not &quot;happily&quot;.
             </p>
           </div>
           <input className="mb-4" placeholder="Filter linking verbs..." value={filter} onChange={(e) => setFilter(e.target.value)} />
@@ -195,6 +261,77 @@ export default function TranslationPage() {
               {s.note && <div className="mt-2 text-xs p-2 rounded" style={{ background: "rgba(99,102,241,0.1)", color: "#a5b4fc" }}>💡 {s.note}</div>}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Weak Areas ── */}
+      {tab === "weak" && (
+        <div>
+          {weakItems.length === 0 ? (
+            <div className="card text-center py-16">
+              <div className="text-4xl mb-3">🎉</div>
+              <div className="font-semibold text-white mb-2">No weak areas recorded yet</div>
+              <p className="text-sm" style={{ color: "var(--muted)" }}>
+                Practice passage translations in the Passages tab. When the AI finds mistakes, they&apos;ll appear here automatically.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-bold text-white">{weakItems.length} mistake{weakItems.length !== 1 ? "s" : ""} recorded</h2>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>From your translation practice — review these to improve</p>
+                </div>
+                <button className="btn btn-secondary text-xs" onClick={clearWeak}>Clear All</button>
+              </div>
+
+              <div className="space-y-4">
+                {weakItems.map((item) => (
+                  <div key={item.id} className="card" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(239,68,68,0.15)", color: "#fca5a5" }}>
+                          {item.direction === "E2B" ? "EN→BN" : "BN→EN"}
+                        </span>
+                        <span className="text-xs" style={{ color: "var(--muted)" }}>from: {item.passageTitle}</span>
+                      </div>
+                      <button onClick={() => removeWeak(item.id)} className="text-xs flex-shrink-0" style={{ color: "var(--muted)" }}>✕ dismiss</button>
+                    </div>
+
+                    {/* Correction */}
+                    <div className="p-3 rounded-lg mb-3" style={{ background: "var(--surface2)" }}>
+                      <div className="flex flex-col gap-1 text-sm mb-2">
+                        <div className="flex items-start gap-2">
+                          <span className="flex-shrink-0 font-semibold" style={{ color: "#fca5a5" }}>✗ You wrote:</span>
+                          <span style={{ color: "#fca5a5" }}>{item.original}</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="flex-shrink-0 font-semibold" style={{ color: "#6ee7b7" }}>✓ Should be:</span>
+                          <span style={{ color: "#6ee7b7" }}>{item.corrected}</span>
+                        </div>
+                      </div>
+                      <div className="text-xs pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--muted)" }}>
+                        💡 {item.reason}
+                      </div>
+                    </div>
+
+                    {/* Related phrases/verbs to study */}
+                    {item.relatedEntries.length > 0 && (
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "#f59e0b" }}>
+                          📚 Related to study
+                        </div>
+                        <div className="space-y-2">
+                          {item.relatedEntries.map((e, i) => <EntryCard key={i} entry={e} />)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -243,8 +380,7 @@ export default function TranslationPage() {
 
           <div className="space-y-2">
             {filteredPassages.map((p) => (
-              <div key={p.id} className="card cursor-pointer" style={{ transition: "border-color 0.15s" }}
-                onClick={() => openPassage(p)}>
+              <div key={p.id} className="card cursor-pointer" style={{ transition: "border-color 0.15s" }} onClick={() => openPassage(p)}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -315,6 +451,11 @@ export default function TranslationPage() {
                 <div className="text-xl font-bold mb-1" style={{ color: gradeColor(evalResult.grade) }}>Grade: {evalResult.grade}</div>
                 <div className="text-sm font-semibold mb-3" style={{ color: "var(--muted)" }}>{evalResult.accuracy}</div>
                 <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>{evalResult.feedback}</p>
+                {evalResult.corrections?.length > 0 && (
+                  <div className="mt-3 text-xs p-2 rounded-lg" style={{ background: "rgba(239,68,68,0.1)", color: "#fca5a5" }}>
+                    ⚠️ {evalResult.corrections.length} mistake{evalResult.corrections.length !== 1 ? "s" : ""} saved to your <strong>Weak Areas</strong> tab
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
