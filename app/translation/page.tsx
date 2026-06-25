@@ -1,10 +1,10 @@
 "use client";
 import { useState, useMemo } from "react";
-import { phrasalVerbs, idiomsAndPhrases, sampleSentences, TranslationEntry } from "@/data/translations";
+import { phrasalVerbs, idiomsAndPhrases, sampleSentences, linkingVerbs, TranslationEntry } from "@/data/translations";
 import { vocabulary } from "@/data/vocabulary";
 import { passages, passageCategories, Passage } from "@/data/passages";
 
-type Tab = "lookup" | "phrasal" | "idioms" | "sentences" | "passages";
+type Tab = "lookup" | "phrasal" | "idioms" | "linking" | "sentences" | "passages";
 
 type EvalResult = {
   score: number;
@@ -92,6 +92,7 @@ export default function TranslationPage() {
     { id: "lookup", label: "Word Lookup", icon: "🔍" },
     { id: "phrasal", label: "Phrasal Verbs", icon: "🔗" },
     { id: "idioms", label: "Idioms & Phrases", icon: "💬" },
+    { id: "linking", label: "Linking Verbs", icon: "🔤" },
     { id: "sentences", label: "Sentence Practice", icon: "📄" },
     { id: "passages", label: "Passages", icon: "📖" },
   ];
@@ -164,6 +165,38 @@ export default function TranslationPage() {
         <div>
           <input className="mb-4" placeholder="Filter idioms and phrases..." value={filter} onChange={(e) => setFilter(e.target.value)} />
           <div className="space-y-3">{filteredIdioms.map((entry, i) => <TranslationCard key={i} entry={entry} />)}</div>
+        </div>
+      )}
+
+      {/* ── Linking Verbs ── */}
+      {tab === "linking" && (
+        <div>
+          <div className="card mb-4" style={{ background: "rgba(99,102,241,0.08)", borderColor: "#6366f1" }}>
+            <p className="text-sm" style={{ color: "#a5b4fc" }}>
+              <strong className="text-white">Linking verbs</strong> connect the subject to a descriptive word (adjective or noun). They do <em>not</em> show action. Key rule: use an <strong>adjective</strong> (not adverb) after them. E.g. &quot;She feels <u>happy</u>&quot; (not &quot;happily&quot;).
+            </p>
+          </div>
+          <div className="space-y-3">
+            {linkingVerbs.map((entry, i) => (
+              <div key={i} className="card">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-1 flex-wrap">
+                      <span className="text-lg font-bold text-white">{entry.english}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(99,102,241,0.2)", color: "#a5b4fc" }}>Linking Verb</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ background: entry.difficulty === "easy" ? "rgba(16,185,129,0.15)" : entry.difficulty === "medium" ? "rgba(245,158,11,0.15)" : "rgba(239,68,68,0.15)", color: entry.difficulty === "easy" ? "#10b981" : entry.difficulty === "medium" ? "#f59e0b" : "#ef4444" }}>
+                        {entry.difficulty}
+                      </span>
+                    </div>
+                    <div className="bangla text-lg mb-2" style={{ color: "#6ee7b7" }}>{entry.bangla}</div>
+                    <div className="text-sm p-2 rounded-lg" style={{ background: "var(--surface2)", color: "var(--muted)" }}>
+                      📌 {entry.grammaticalNote}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
