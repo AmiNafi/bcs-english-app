@@ -1,10 +1,9 @@
 "use client";
 import { useState, useMemo } from "react";
 import { phrasalVerbs, idiomsAndPhrases, sampleSentences, linkingVerbs, TranslationEntry } from "@/data/translations";
-import { vocabulary } from "@/data/vocabulary";
 import { passages, passageCategories, Passage } from "@/data/passages";
 
-type Tab = "lookup" | "phrasal" | "idioms" | "linking" | "sentences" | "passages";
+type Tab = "phrasal" | "idioms" | "linking" | "sentences" | "passages";
 
 type EvalResult = {
   score: number;
@@ -60,10 +59,7 @@ function EntryCard({ entry }: { entry: TranslationEntry }) {
 }
 
 export default function TranslationPage() {
-  const [tab, setTab] = useState<Tab>("lookup");
-  const [query, setQuery] = useState("");
-  const [result, setResult] = useState<null | { word: string; bangla: string; note: string }>(null);
-  const [notFound, setNotFound] = useState(false);
+  const [tab, setTab] = useState<Tab>("phrasal");
   const [filter, setFilter] = useState("");
 
   const [pDirection, setPDirection] = useState<"all" | "E2B" | "B2E">("all");
@@ -75,20 +71,6 @@ export default function TranslationPage() {
   const [evaluating, setEvaluating] = useState(false);
   const [evalResult, setEvalResult] = useState<EvalResult | null>(null);
   const [evalError, setEvalError] = useState("");
-
-  function handleLookup() {
-    const q = query.trim().toLowerCase();
-    if (!q) return;
-    const v = vocabulary.find((w) => w.word.toLowerCase() === q);
-    if (v) { setResult({ word: v.word, bangla: v.bangla, note: v.definition }); setNotFound(false); return; }
-    const p = phrasalVerbs.find((x) => x.english.toLowerCase() === q);
-    if (p) { setResult({ word: p.english, bangla: p.bangla, note: p.grammaticalNote }); setNotFound(false); return; }
-    const id = idiomsAndPhrases.find((x) => x.english.toLowerCase() === q);
-    if (id) { setResult({ word: id.english, bangla: id.bangla, note: id.grammaticalNote }); setNotFound(false); return; }
-    const s = sampleSentences.find((x) => x.english.toLowerCase().includes(q));
-    if (s) { setResult({ word: s.english, bangla: s.bangla, note: s.note ?? "" }); setNotFound(false); return; }
-    setResult(null); setNotFound(true);
-  }
 
   const filteredPhrasal = phrasalVerbs.filter((p) =>
     filter === "" || p.english.toLowerCase().includes(filter.toLowerCase()) || p.bangla.includes(filter)
@@ -129,7 +111,6 @@ export default function TranslationPage() {
   const scoreColor = (s: number) => s >= 80 ? "#10b981" : s >= 60 ? "#f59e0b" : s >= 40 ? "#f97316" : "#ef4444";
 
   const tabs: { id: Tab; label: string; icon: string; count?: number }[] = [
-    { id: "lookup",    label: "Word Lookup",      icon: "🔍" },
     { id: "phrasal",   label: "Phrasal Verbs",    icon: "🔗", count: phrasalVerbs.length },
     { id: "idioms",    label: "Idioms & Phrases", icon: "💬", count: idiomsAndPhrases.length },
     { id: "linking",   label: "Linking Verbs",    icon: "🔤", count: linkingVerbs.length },
@@ -145,7 +126,7 @@ export default function TranslationPage() {
       </div>
 
       {/* ── Card-based tab selector ── */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mb-6">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -170,43 +151,6 @@ export default function TranslationPage() {
           </button>
         ))}
       </div>
-
-      {/* ── Word Lookup ── */}
-      {tab === "lookup" && (
-        <div className="space-y-4">
-          <div className="flex gap-3">
-            <input type="text" placeholder="Enter English word, phrase, or sentence..." value={query}
-              onChange={(e) => { setQuery(e.target.value); setResult(null); setNotFound(false); }}
-              onKeyDown={(e) => e.key === "Enter" && handleLookup()} />
-            <button className="btn btn-primary" style={{ whiteSpace: "nowrap" }} onClick={handleLookup}>Translate</button>
-          </div>
-          {result && (
-            <div className="card fade-in" style={{ borderColor: "#6366f1" }}>
-              <div className="text-2xl font-bold text-white mb-2">{result.word}</div>
-              <div className="text-2xl bangla font-bold mb-3" style={{ color: "#a5b4fc" }}>{result.bangla}</div>
-              {result.note && <p className="text-sm" style={{ color: "var(--muted)" }}>{result.note}</p>}
-            </div>
-          )}
-          {notFound && (
-            <div className="card">
-              <p style={{ color: "var(--muted)" }}>No result for <strong className="text-white">"{query}"</strong>. Try the Vocabulary section.</p>
-            </div>
-          )}
-          <div className="card">
-            <h3 className="font-semibold text-white mb-3">Quick Reference — Common BCS Words</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {vocabulary.slice(0, 12).map((w) => (
-                <div key={w.id} className="flex justify-between items-center p-2 rounded-lg cursor-pointer"
-                  style={{ background: "var(--surface2)" }}
-                  onClick={() => { setQuery(w.word); setResult({ word: w.word, bangla: w.bangla, note: w.definition }); setNotFound(false); }}>
-                  <span className="text-white font-medium text-sm">{w.word}</span>
-                  <span className="bangla text-sm" style={{ color: "#a5b4fc" }}>{w.bangla.split("/")[0].trim()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Phrasal Verbs ── */}
       {tab === "phrasal" && (
