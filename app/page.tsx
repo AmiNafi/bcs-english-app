@@ -37,11 +37,9 @@ const modules = [
 ];
 
 const tips = [
-  "English section in BCS carries 35 marks — never neglect it.",
   "Learn 10 new vocabulary words daily with Bangla meanings.",
   "Phrasal verbs and idioms frequently appear in BCS written exams.",
   "Practice translating editorial paragraphs — it sharpens both grammar and vocabulary.",
-  "For free writing, aim for neat, legible handwriting at 30+ words per minute.",
 ];
 
 export default function HomePage() {
