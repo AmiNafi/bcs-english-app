@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# BCS English Master
 
-## Getting Started
+A [Next.js](https://nextjs.org) app for BCS (Bangladesh Civil Service) English preparation: vocabulary, quizzes, English ↔ Bangla passage translation with AI evaluation, and free-hand writing practice with AI feedback.
 
-First, run the development server:
+The AI evaluation is powered by [Groq](https://console.groq.com) (`/api/evaluate-translation` and `/api/evaluate-writing`).
+
+## Local setup
 
 ```bash
+npm install
+cp .env.example .env.local   # then paste your Groq key into GROQ_API_KEY
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `GROQ_API_KEY` | yes | Create one at <https://console.groq.com/keys>. No quotes, no trailing spaces. |
+| `GROQ_MODEL` | no | Defaults to `openai/gpt-oss-120b`. Only set this if Groq retires the default; pick a current production model from <https://console.groq.com/docs/models>. |
 
-## Learn More
+If `GROQ_API_KEY` is missing, both evaluation buttons show *"GROQ_API_KEY is not configured"*.
 
-To learn more about Next.js, take a look at the following resources:
+## Deploying on Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Import the repo at <https://vercel.com/new> (or push to `main` if the project is already connected — Vercel redeploys automatically).
+2. In the Vercel project go to **Settings → Environment Variables** and add `GROQ_API_KEY` for **Production**, **Preview** and **Development**.
+3. Environment variables are baked in at deploy time, so after adding or changing one go to **Deployments → ⋯ → Redeploy**.
+4. If an evaluation fails, the exact Groq error is shown in the UI and logged under **Deployments → (latest) → Logs**.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Why evaluation broke in Aug 2026
 
-## Deploy on Vercel
+The routes originally hard-coded Groq's `llama-3.3-70b-versatile`, which Groq retired for free/developer keys on 2026-08-16 ([deprecations](https://console.groq.com/docs/deprecations)). Every request then failed with a *"model decommissioned"* error. The app now defaults to Groq's recommended replacement and lets you override the model with `GROQ_MODEL` without a code change.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Scripts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `npm run dev` – development server
+- `npm run build` – production build
+- `npm run lint` – ESLint
+- `node scripts/scrape-passages.mjs` – regenerate `data/passages.ts`
